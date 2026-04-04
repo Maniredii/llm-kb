@@ -5,6 +5,8 @@ import { scan, summarize } from "./scan.js";
 import { parsePDF } from "./pdf.js";
 import { buildIndex } from "./indexer.js";
 import { startWatcher } from "./watcher.js";
+import { query } from "./query.js";
+import { resolveKnowledgeBase } from "./resolve-kb.js";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
@@ -103,6 +105,28 @@ program
     // Start watching for new files
     console.log(chalk.dim(`\n  Watching for new files... (Ctrl+C to stop)`));
     startWatcher({ folder: root, sourcesDir });
+  });
+
+program
+  .command("query")
+  .description("Ask a question across your knowledge base")
+  .argument("<question>", "Your question")
+  .option("--folder <path>", "Path to document folder (auto-detects if omitted)")
+  .option("--save", "Save the answer to wiki/outputs/ (research mode)")
+  .action(async (question: string, options: { folder?: string; save?: boolean }) => {
+    const root = resolveKnowledgeBase(options.folder || process.cwd());
+
+    if (!root) {
+      console.error(chalk.red("No knowledge base found. Run 'llm-kb run <folder>' first."));
+      process.exit(1);
+    }
+
+    try {
+      await query(root, question, { save: options.save });
+    } catch (err: any) {
+      console.error(chalk.red(err.message));
+      process.exit(1);
+    }
   });
 
 program.parse();
