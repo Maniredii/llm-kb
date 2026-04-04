@@ -1,3 +1,4 @@
 node_modules
 bin/cli.js
 test-docs
+eng.traineddata
