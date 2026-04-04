@@ -45,7 +45,11 @@ Config file has no readers yet. Deferred to Phase 2/3. README updated instead.
 - OCR via env var (local Tesseract or remote Azure bridge)
 - Auth via Pi SDK (zero config)
 
-**What's next (Phase 2):**
-- `llm-kb query "question" --folder ./research` — terminal query
-- Pi SDK agent session for Q&A with read-only tools
-- Research mode — agent writes answers to `outputs/`
+**Phase 2 complete ✅:**
+- `llm-kb query "question"` — auto-detects KB, streams cited answers
+- `--save` flag — research mode, saves to `outputs/`, re-indexes
+- Query mode is read-only (read tool only). Research mode adds bash + write.
+
+**Deferred to Phase 4:**
+- Trace logging (JSON per query: question, filesRead, citations, tokens, duration)
+- Needed for eval, but no eval system yet to consume traces

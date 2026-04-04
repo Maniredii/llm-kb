@@ -96,9 +96,9 @@ export async function query(
   });
   await loader.reload();
 
-  const tools = [createReadTool(folder), createBashTool(folder)];
+  const tools = [createReadTool(folder)];
   if (options.save) {
-    tools.push(createWriteTool(folder));
+    tools.push(createBashTool(folder), createWriteTool(folder));
   }
 
   const { session } = await createAgentSession({
@@ -123,4 +123,10 @@ export async function query(
   await session.prompt(question);
   console.log();
   session.dispose();
+
+  // Re-index after save so the compounding loop works
+  if (options.save) {
+    const { buildIndex } = await import("./indexer.js");
+    await buildIndex(folder, sourcesDir);
+  }
 }

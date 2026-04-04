@@ -22,12 +22,14 @@ Pi handles the LLM auth — no separate API key configuration needed.
 
 ## What It Does
 
-```
+### Ingest
+
+```bash
 llm-kb run ./my-documents
 ```
 
 ```
-llm-kb v0.0.1
+llm-kb v0.2.0
 
 Scanning ./my-documents...
   Found 9 files (9 PDF)
@@ -45,6 +47,24 @@ Scanning ./my-documents...
 2. **Parses** each PDF to markdown + bounding boxes (using [LiteParse](https://github.com/run-llama/liteparse))
 3. **Builds an index** — Pi SDK agent reads all sources and writes `index.md` with summaries
 4. **Watches** — drop a new PDF in while it's running, it gets parsed and indexed automatically
+
+### Query
+
+```bash
+# From inside the documents folder (auto-detects .llm-kb/)
+llm-kb query "what are the key findings?"
+
+# From anywhere, with explicit folder
+llm-kb query "compare Q3 vs Q4" --folder ./my-documents
+
+# Research mode — saves the answer to wiki/outputs/ and re-indexes
+llm-kb query "summarize all revenue data" --save
+```
+
+The agent reads `index.md`, selects relevant files, and streams a cited answer to the terminal.
+
+**Query mode** — read-only. The agent can only read your files.
+**Research mode** (`--save`) — read + write + bash. The agent saves answers to `outputs/`, re-indexes, and can write scripts to read Excel/Word files. Answers compound over time.
 
 ### What It Creates
 
