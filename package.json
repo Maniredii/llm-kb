@@ -1,0 +1,24 @@
+{
+  "name": "llm-kb",
+  "version": "0.0.1",
+  "description": "LLM-powered knowledge base. Drop documents, build a wiki, ask questions. Inspired by Karpathy.",
+  "bin": {
+    "llm-kb": "./bin/cli.mjs"
+  },
+  "type": "module",
+  "keywords": [
+    "llm",
+    "knowledge-base",
+    "wiki",
+    "karpathy",
+    "ai",
+    "document",
+    "pi-sdk"
+  ],
+  "author": "Satish Venkatakrishnan <satish@deltaxy.ai>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/satish860/llm-kb"
+  }
+}
