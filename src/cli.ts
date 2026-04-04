@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { scan, summarize } from "./scan.js";
 import { parsePDF } from "./pdf.js";
 import { buildIndex } from "./indexer.js";
+import { startWatcher } from "./watcher.js";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { resolve, join } from "node:path";
@@ -98,6 +99,10 @@ program
     }
 
     console.log(`\n  ${chalk.dim("Output:")} ${sourcesDir}`);
+
+    // Start watching for new files
+    console.log(chalk.dim(`\n  Watching for new files... (Ctrl+C to stop)`));
+    startWatcher({ folder: root, sourcesDir });
   });
 
 program.parse();

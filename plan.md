@@ -47,7 +47,7 @@
 **Do:** Read all `sources/*.md` → Pi SDK `createAgentSession` with Haiku → write `index.md` with summary table. API key from `ANTHROPIC_API_KEY` env var.
 **Success Criteria:** `index.md` exists with a meaningful summary of all parsed sources. Cost < $0.05.
 **Checkpoint:** Is the index quality good enough for query routing later? Is Pi SDK the right tool here or would raw Anthropic SDK be simpler?
-**Status:** ⬜ Not started
+**Status:** ✅ Done
 
 ---
 
