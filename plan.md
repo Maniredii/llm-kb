@@ -31,7 +31,7 @@
 **Do:** Detect scanned pages (LiteParse's page classification). Use Tesseract.js locally. If `OCR_SERVER_URL` env var exists, route scanned pages there instead.
 **Success Criteria:** A scanned PDF produces readable markdown. Native-text PDFs still work fast (no OCR overhead).
 **Checkpoint:** Is Tesseract.js quality acceptable? Is the OCR server interface clean enough to swap providers later?
-**Status:** ⬜ Not started
+**Status:** ✅ Done — LiteParse has Tesseract.js built-in. Just `ocrEnabled: true` + pass `OCR_SERVER_URL` env var.
 
 ---
 

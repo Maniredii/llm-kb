@@ -1,6 +1,7 @@
 import { LiteParse } from "@llamaindex/liteparse";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
+import { cpus } from "node:os";
 
 export interface ParsedPDF {
   name: string;
@@ -18,10 +19,12 @@ export async function parsePDF(
   await mkdir(outputDir, { recursive: true });
 
   const ocrServerUrl = process.env.OCR_SERVER_URL;
+  const ocrEnabled = ocrServerUrl ? true : (process.env.OCR_ENABLED === "true");  
 
   const parser = new LiteParse({
-    ocrEnabled: true,
+    ocrEnabled,
     outputFormat: "json",
+    numWorkers: cpus().length,
     ...(ocrServerUrl ? { ocrServerUrl } : {}),
   });
   const result = await parser.parse(pdfPath, true);
