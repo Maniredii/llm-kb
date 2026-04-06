@@ -7,13 +7,13 @@ import { buildIndex } from "./indexer.js";
 import { startWatcher } from "./watcher.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { query, createChat } from "./query.js";
+import { ChatDisplay } from "./tui-display.js";
 import { resolveKnowledgeBase } from "./resolve-kb.js";
 import { checkAuth, exitWithAuthError } from "./auth.js";
 import { ensureConfig, loadConfig } from "./config.js";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
-import * as readline from "node:readline";
 import chalk from "chalk";
 
 const program = new Command();
@@ -54,11 +54,10 @@ program
     console.log(`  Found ${chalk.bold(files.length.toString())} files (${summarize(files)})`);
     if (pdfs.length === 0) return;
 
-    // Set up .llm-kb folder structure
     const sourcesDir = join(root, ".llm-kb", "wiki", "sources");
     await mkdir(sourcesDir, { recursive: true });
 
-    // Parse PDFs with inline progress
+    // Parse PDFs
     let parsed = 0;
     let skipped = 0;
     let failed = 0;
@@ -66,14 +65,11 @@ program
 
     for (let i = 0; i < pdfs.length; i++) {
       const pdf = pdfs[i];
-      const fullPath = join(root, pdf.path);
-
       const progress = `  Parsing... ${i + 1}/${pdfs.length} \u2014 ${pdf.name}`;
       process.stdout.write(`\r${progress.padEnd(process.stdout.columns || 80)}`);
-
       try {
-        const result = await parsePDF(fullPath, sourcesDir);
-        if (result.skipped) { skipped++; } else { parsed++; }
+        const result = await parsePDF(join(root, pdf.path), sourcesDir);
+        if (result.skipped) skipped++; else parsed++;
       } catch (err: any) {
         failed++;
         errors.push({ name: pdf.name, message: err.message });
@@ -87,23 +83,18 @@ program
     if (skipped > 0) parts.push(chalk.dim(`${skipped} skipped (up to date)`));
     if (failed > 0) parts.push(chalk.red(`${failed} failed`));
     console.log(`  ${parts.join(", ")}`);
+    for (const err of errors) console.log(chalk.red(`    \u2717 ${err.name} \u2014 ${err.message}`));
 
-    for (const err of errors) {
-      console.log(chalk.red(`    \u2717 ${err.name} \u2014 ${err.message}`));
-    }
-
-    // Build index \u2014 skip if up to date
+    // Build index — skip if up to date
     const indexFile = join(root, ".llm-kb", "wiki", "index.md");
     let indexUpToDate = false;
     if (parsed === 0 && existsSync(indexFile)) {
       try {
         const indexMtime = (await stat(indexFile)).mtimeMs;
         const sourceFiles = await readdir(sourcesDir);
-        const sourceMtimes = await Promise.all(
-          sourceFiles.map((f) => stat(join(sourcesDir, f)).then((s) => s.mtimeMs))
-        );
-        indexUpToDate = sourceMtimes.every((mtime) => indexMtime >= mtime);
-      } catch { /* rebuild on error */ }
+        const mtimes = await Promise.all(sourceFiles.map((f) => stat(join(sourcesDir, f)).then((s) => s.mtimeMs)));
+        indexUpToDate = mtimes.every((mt) => indexMtime >= mt);
+      } catch {}
     }
 
     if (indexUpToDate) {
@@ -120,60 +111,39 @@ program
 
     console.log(`\n  ${chalk.dim("Output:")} ${sourcesDir}`);
 
-    // Start file + session watchers
+    // Start watchers
     startWatcher({ folder: root, sourcesDir, authStorage: auth.authStorage, indexModel: config.indexModel });
     startSessionWatcher(root);
 
-    // Create ONE persistent chat session for the entire run
+    // TUI chat
+    const chatUI = new ChatDisplay();
     const { session, display } = await createChat(root, {
       authStorage: auth.authStorage,
       modelId: config.queryModel,
+      tuiDisplay: chatUI,
     });
 
-    // Interactive chat loop \u2014 same session, full conversation memory
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+    chatUI.onSubmit = async (text) => {
+      display.setQuestion(text);
+      try {
+        await session.prompt(text);
+      } catch { /* error shown in TUI */ }
+    };
 
-    rl.on("close", async () => {
+    process.on("SIGINT", async () => {
       await display.flush();
       session.dispose();
-      console.log(chalk.dim("\n  Goodbye."));
+      chatUI.stop();
       process.exit(0);
     });
 
-    const hr = () => {
-      const cols = process.stdout.columns || 80;
-      return chalk.hex("#c678dd")("\u2500".repeat(cols));
-    };
-
-    const ask = () => {
-      process.stdout.write(`\n${hr()}\n`);
-      rl.question("", async (input) => {
-        process.stdout.write(`${hr()}\n\n`);
-        const q = input.trim();
-        if (!q) { ask(); return; }
-
-        rl.pause();
-        display.setQuestion(q);
-        try {
-          await session.prompt(q);
-        } catch (err: any) {
-          console.error(chalk.red(`  Error: ${err.message}`));
-        }
-        rl.resume();
-        ask();
-      });
-    };
-
-    console.log(`\n${chalk.bold("Ready.")} Ask a question or drop files in to re-index. ${chalk.dim("(Ctrl+C to stop)")}`);
-    ask();
+    console.log(`\n${chalk.bold("Ready.")} Ask a question or drop files in to re-index.\n`);
+    chatUI.start();
   });
 
 program
   .command("query")
-  .description("Ask a single question (non-interactive)")
+  .description("Ask a single question (non-interactive, stdout)")
   .argument("<question>", "Your question")
   .option("--folder <path>", "Path to document folder (auto-detects if omitted)")
   .option("--save", "Save the answer to wiki/outputs/ (research mode)")
@@ -188,7 +158,6 @@ program
     }
 
     const config = await loadConfig(root);
-
     try {
       await query(root, question, {
         save: options.save,
@@ -220,33 +189,22 @@ program
     const outputsDir = join(root, ".llm-kb", "wiki", "outputs");
 
     let sourceCount = 0;
-    let sourceBreakdown = "";
-    try {
-      const files = await readdir(sourcesDir);
-      sourceCount = files.filter((f) => f.endsWith(".md")).length;
-      sourceBreakdown = `${sourceCount} parsed source${sourceCount !== 1 ? "s" : ""}`;
-    } catch {}
+    try { sourceCount = (await readdir(sourcesDir)).filter((f) => f.endsWith(".md")).length; } catch {}
 
     let indexAge = "not built yet";
     try {
-      const s = await stat(indexFile);
-      const diffMs = Date.now() - s.mtimeMs;
-      const diffMin = Math.round(diffMs / 60000);
+      const diffMin = Math.round((Date.now() - (await stat(indexFile)).mtimeMs) / 60000);
       indexAge = diffMin < 1 ? "just now" : diffMin < 60 ? `${diffMin} min ago` : `${Math.round(diffMin / 60)} hr ago`;
     } catch {}
 
     let outputCount = 0;
-    try {
-      outputCount = (await readdir(outputsDir)).filter((f) => f.endsWith(".md")).length;
-    } catch {}
+    try { outputCount = (await readdir(outputsDir)).filter((f) => f.endsWith(".md")).length; } catch {}
 
     console.log(`\n${chalk.bold("Knowledge Base Status")}`);
     console.log(`  ${chalk.dim("Folder:")}  ${root}`);
-    console.log(`  ${chalk.dim("Sources:")} ${sourceBreakdown || chalk.yellow("none yet")}`);
+    console.log(`  ${chalk.dim("Sources:")} ${sourceCount > 0 ? `${sourceCount} parsed source${sourceCount !== 1 ? "s" : ""}` : chalk.yellow("none yet")}`);
     console.log(`  ${chalk.dim("Index:")}   ${indexAge}`);
-    if (outputCount > 0) {
-      console.log(`  ${chalk.dim("Outputs:")} ${outputCount} saved answer${outputCount !== 1 ? "s" : ""}`);
-    }
+    if (outputCount > 0) console.log(`  ${chalk.dim("Outputs:")} ${outputCount} saved answer${outputCount !== 1 ? "s" : ""}`);
     console.log(`  ${chalk.dim("Models:")}  ${chalk.cyan(config.queryModel)} ${chalk.dim("(query)")}  ${chalk.cyan(config.indexModel)} ${chalk.dim("(index)")}`);
     console.log(`  ${chalk.dim("Auth:")}    ${auth.ok ? (auth.method === "pi-sdk" ? "Pi SDK" : "ANTHROPIC_API_KEY") : chalk.red("not configured")}`);
     console.log();

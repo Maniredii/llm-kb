@@ -182,3 +182,119 @@ Definition of done:
 - [ ] `llm-kb status` shows KB stats + config + auth
 - [ ] README updated with auth options + eval command
 - [ ] Blog Part 4 written with real eval output
+
+---
+
+## Phase 4: Wiki Compilation (The Farzapedia Pattern)
+
+> **Insight:** Farza's implementation is what Karpathy called the best version. The key isn't just indexing sources — it's compiling them into a **concept-organized wiki** with backlinked articles. The agent navigates concepts, not raw files.
+>
+> Current llm-kb: agent reads source summaries → picks source files → answers from raw docs.
+> Wiki pattern: agent reads concept articles → drills into specific articles → answers from synthesized knowledge.
+
+### The Structural Shift
+
+**Current (source-organized):**
+```
+sources/lease-castlelake.md    ─┐
+sources/lease-genesis.md       ─┤→ index.md (flat table, one row per source)
+sources/maintenance-manual.md  ─┘
+```
+
+**Wiki (concept-organized):**
+```
+sources/lease-castlelake.md    ─┐
+sources/lease-genesis.md       ─┤→ articles/reserve-requirements.md
+sources/maintenance-manual.md  ─┘   articles/key-parties.md
+                                      articles/engine-types.md
+                                      articles/maintenance-obligations.md
+                                      index.md (catalog of ARTICLES with backlinks)
+```
+
+Farza's quote: *"The structure of the wiki files and how it's all backlinked is very easily crawlable by any agent. Starting at index.md, the agent does a really good job at drilling into the specific pages it needs."*
+
+Karpathy's quote: *"I thought I had to reach for fancy RAG, but the LLM has been pretty good about auto-maintaining index files and brief summaries of all the documents and it reads all the important related data fairly easily at this ~small scale."*
+
+### New Command
+
+```bash
+llm-kb compile ./folder
+```
+
+Or auto-triggered after indexing when `--wiki` flag is passed:
+
+```bash
+llm-kb run ./folder --wiki   # parse + index + compile wiki
+```
+
+### Wiki Directory Structure
+
+```
+.llm-kb/
+  wiki/
+    sources/          # raw parsed files (unchanged)
+    articles/         # NEW: concept-organized articles
+      concepts/       # thematic articles (reserve-requirements.md, etc)
+      entities/       # people, companies, assets
+      timeline.md     # chronological view of events
+    index.md          # NOW points to articles, not sources
+    source-index.md   # OLD flat source table (kept for reference)
+```
+
+### How Compile Works
+
+1. LLM reads ALL source files (via existing sources/ dir)
+2. LLM identifies key concepts, entities, and themes
+3. LLM writes one markdown article per concept — like a Wikipedia entry
+4. Each article has:
+   - Description (synthesized from multiple sources)
+   - Backlinks to related articles: `[[reserve-requirements]]`, `[[key-parties]]`
+   - Source citations: `(Source: lease-castlelake.md, p.3)`
+5. Writes `articles/index.md` — catalog of all articles with one-line descriptions
+
+### Incremental Updates (The Compounding Part)
+
+When a new source is added (watcher detects it):
+1. Parse it → sources/
+2. LLM reads new source + `articles/index.md`
+3. LLM updates 2-3 most relevant existing articles where new content fits
+4. OR creates a new article if the topic is genuinely new
+5. Updates `articles/index.md` catalog
+
+Farza: *"The most magical thing now is as I add new things, the system updates 2-3 different articles where it feels the context belongs, or just creates a new article. Like a super genius librarian."*
+
+### Query Change
+
+With wiki mode active, query agent reads `articles/index.md` (concept catalog) instead of `source-index.md` (source table). Agent drills into concept articles, gets synthesized cross-referenced answers.
+
+Fallback: if no articles compiled yet, falls back to source-index behavior.
+
+### Blog Post
+
+Part 5 or 6: *"Why Your Knowledge Base Needs a Librarian, Not a Search Engine"*
+- Show the before/after: flat source index vs concept wiki
+- Show Farza's insight: built for agents, not humans
+- Show the compounding: add one doc, 3 articles updated automatically
+- Live demo: `llm-kb compile` on a real document set
+
+### Why This Matters for llm-kb
+
+- Karpathy publicly called this the best implementation of his pattern
+- Farza has **no public code** — llm-kb ships it as `npx llm-kb compile`
+- Farzapedia got **920K views** on Farza's tweet, **Karpathy quote-tweeted** it at **920K views**
+- First open-source implementation of the exact pattern Karpathy validated
+- Blog post can reference both tweets legitimately ("inspired by Farza's Farzapedia")
+
+### Definition of Done (Phase 4)
+
+- [ ] `llm-kb compile ./folder` reads sources and writes articles/ directory
+- [ ] Each article is a proper markdown file with backlinks and source citations
+- [ ] `articles/index.md` is a concept catalog (not a source table)
+- [ ] Watcher triggers incremental article updates when new source added
+- [ ] Query uses article index when available, falls back to source index
+- [ ] `llm-kb status` shows: X sources, Y articles, last compiled
+- [ ] Blog Part 5 written: concept wiki vs flat index, Farzapedia reference
+
+---
+
+*Phase 4 added April 6, 2026 — inspired by Farzapedia (@FarzaTV), highlighted by Karpathy as best implementation of the LLM wiki pattern. 920K views on Farza's tweet, Karpathy quote-tweet at 920K views.*
