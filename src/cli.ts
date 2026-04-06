@@ -111,9 +111,9 @@ program
     }
 
     // Compile concept articles — skip if up to date
-    console.log(`\n  Compiling articles... ${chalk.dim(`(${config.queryModel})`)}`);
+    console.log(`\n  Compiling articles... ${chalk.dim(`(${config.indexModel})`)}`);
     try {
-      const result = await compileArticles(root, sourcesDir, auth.authStorage, config.queryModel);
+      const result = await compileArticles(root, sourcesDir, auth.authStorage, config.indexModel);
       if (result.skipped) {
         process.stdout.write(`\r${"".padEnd(process.stdout.columns || 80)}\r`);
         console.log(chalk.dim(`  Articles up to date.`));
