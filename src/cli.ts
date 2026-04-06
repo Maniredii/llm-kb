@@ -7,7 +7,7 @@ import { buildIndex } from "./indexer.js";
 import { startWatcher } from "./watcher.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { query, createChat } from "./query.js";
-import { compileArticles } from "./compiler.js";
+// compiler.ts kept for eval-driven compilation (Phase 4, Slice 4)
 import { ChatDisplay } from "./tui-display.js";
 import { resolveKnowledgeBase } from "./resolve-kb.js";
 import { checkAuth, exitWithAuthError } from "./auth.js";
@@ -108,21 +108,6 @@ program
       } catch (err: any) {
         console.error(chalk.red(`  Index failed: ${err.message}`));
       }
-    }
-
-    // Compile concept articles — skip if up to date
-    console.log(`\n  Compiling articles... ${chalk.dim(`(${config.indexModel})`)}`);
-    try {
-      const result = await compileArticles(root, sourcesDir, auth.authStorage, config.indexModel);
-      if (result.skipped) {
-        process.stdout.write(`\r${"".padEnd(process.stdout.columns || 80)}\r`);
-        console.log(chalk.dim(`  Articles up to date.`));
-      } else {
-        process.stdout.write(`\r${"".padEnd(process.stdout.columns || 80)}\r`);
-        console.log(chalk.green(`  ${result.articleCount} articles compiled to .llm-kb/wiki/articles/`));
-      }
-    } catch (err: any) {
-      console.error(chalk.red(`  Article compilation failed: ${err.message}`));
     }
 
     console.log(`\n  ${chalk.dim("Output:")} ${sourcesDir}`);
