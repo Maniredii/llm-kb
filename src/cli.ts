@@ -22,14 +22,14 @@ const program = new Command();
 program
   .name("llm-kb")
   .description("Drop files into a folder. Get a knowledge base you can query.")
-  .version("0.3.0");
+  .version("0.4.0");
 
 program
   .command("run")
   .description("Scan, parse, index, and watch a folder")
   .argument("<folder>", "Path to your documents folder")
   .action(async (folder: string) => {
-    console.log(`\n${chalk.bold("llm-kb")} v0.3.0\n`);
+    console.log(`\n${chalk.bold("llm-kb")} v0.4.0\n`);
 
     const auth = checkAuth();
     if (!auth.ok) exitWithAuthError();
