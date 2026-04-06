@@ -31,24 +31,25 @@ Read the markdown versions in \`.llm-kb/wiki/sources/\` instead of the raw PDFs.
 Available parsed sources:
 ${sourceList}
 
-### Other file types (Excel, Word, PowerPoint, CSV, images)
-You have bash and read tools. These libraries are pre-installed and available:
-For .docx use mammoth:
-  const mammoth = require('mammoth');
-  const result = await mammoth.extractRawText({ path: 'file.docx' });
-  console.log(result.value);
-  IMPORTANT: Always use extractRawText() NOT convertToHtml().
+### Other file types (Excel, Word, PowerPoint)
+You have bash and read tools. Use bash to run Node.js scripts.
+Libraries are pre-installed via require().
+
+For .docx (structured XML — ZIP containing word/document.xml):
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip('file.docx');
+  const xml = zip.readAsText('word/document.xml');
+  // Parse XML to extract headings and first paragraphs for summary
 
 For .xlsx use exceljs:
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile('file.xlsx');
-  wb.eachSheet((sheet) => { sheet.eachRow((row) => console.log(row.values.join('\t'))); });
+  const sheet = wb.getWorksheet(1);
 
 For .pptx use officeparser:
   const officeparser = require('officeparser');
   const text = await officeparser.parseOfficeAsync('file.pptx');
-  console.log(text);
 
 ## Index file
 Write the index to \`.llm-kb/wiki/index.md\`.

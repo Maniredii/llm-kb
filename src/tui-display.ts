@@ -188,6 +188,15 @@ export class ChatDisplay {
     this.tui.requestRender();
   }
 
+  /** Show code block (e.g. bash script the agent wrote) */
+  addCodeBlock(code: string): void {
+    if (!this.currentResponse) return;
+    this.currentMd = null;
+    // Use Markdown component to render the code block with proper formatting
+    this.currentResponse.addChild(new Markdown("```javascript\n" + code + "\n```", 2, 0, mdTheme));
+    this.tui.requestRender();
+  }
+
   /** Show tool execution result (success/error) */
   addToolResult(toolCallId: string, isError: boolean): void {
     if (!this.currentResponse) return;

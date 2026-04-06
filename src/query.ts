@@ -52,12 +52,7 @@ function getToolLabel(toolName: string, args: any): string | null {
     return `${verb}  ${file}`;
   }
   if (toolName === "bash" && args?.command) {
-    const cmd = (args.command as string).trim();
-    // Show the actual command for short ones, "Running script..." for multi-line
-    if (cmd.includes("\n")) {
-      return `Running  Node.js script`;
-    }
-    return `Running  ${cmd.slice(0, 80)}`;
+    return `Running  bash`;
   }
   return null;
 }
@@ -71,9 +66,69 @@ function buildQueryAgents(sourceFiles: string[], save: boolean, wikiContent: str
     : "";
   const sourceStep = wikiContent ? "If not covered in the wiki above: read the sources" : "How to answer";
 
-  let content = `# llm-kb Knowledge Base — Query Mode\n\n${wikiSection}## ${sourceStep}\n\n1. Read .llm-kb/wiki/index.md to understand all available sources\n2. Select the most relevant source files (usually 2-5) and read them in full\n3. Answer with inline citations: (filename, page number)\n4. If you can't find the answer, say so — don't hallucinate\n\n## Available parsed sources\n${sourceList}\n\n## Non-PDF files\nIf the user's folder has Excel, Word, or PowerPoint files, use bash to run a Node.js script. These libraries are pre-installed:\n\n### Word (.docx) — use mammoth\n\`\`\`javascript\nconst mammoth = require('mammoth');\nconst result = await mammoth.extractRawText({ path: 'file.docx' });\nconsole.log(result.value);\n\`\`\`\nIMPORTANT: Always use extractRawText() NOT convertToHtml().\n\n### Excel (.xlsx) — use exceljs\n\`\`\`javascript\nconst ExcelJS = require('exceljs');\nconst wb = new ExcelJS.Workbook();\nawait wb.xlsx.readFile('file.xlsx');\nwb.eachSheet((sheet) => { sheet.eachRow((row) => console.log(row.values.join('\\t'))); });\n\`\`\`\n\n### PowerPoint (.pptx) — use officeparser\n\`\`\`javascript\nconst officeparser = require('officeparser');\nconst text = await officeparser.parseOfficeAsync('file.pptx');\nconsole.log(text);\n\`\`\`\n\n## Rules\n- Always cite sources with filename and page number\n- Read the FULL source file, not just the beginning\n- Prefer primary sources over previous analyses\n`;
-  if (save) content += `\n## Research Mode\nSave your analysis to .llm-kb/wiki/outputs/ with a descriptive filename.\nInclude the question at the top and all citations.\n`;
-  return content;
+  const lines = [
+    `# llm-kb Knowledge Base — Query Mode`,
+    ``,
+    wikiSection,
+    `## ${sourceStep}`,
+    ``,
+    `1. Read .llm-kb/wiki/index.md to understand all available sources`,
+    `2. Select the most relevant source files (usually 2-5) and read them in full`,
+    `3. Answer with inline citations: (filename, page number)`,
+    `4. If you can't find the answer, say so — don't hallucinate`,
+    ``,
+    `## Available parsed sources`,
+    sourceList,
+    ``,
+    `## Non-PDF files (docx, xlsx, pptx)`,
+    `Use bash to run Node.js scripts. Libraries are pre-installed via require().`,
+    ``,
+    `### Word (.docx) — structured XML`,
+    `.docx files are ZIP archives containing word/document.xml.`,
+    `Read them SELECTIVELY — extract only what is relevant to the question:`,
+    ``,
+    "```javascript",
+    `const AdmZip = require('adm-zip');`,
+    `const zip = new AdmZip('file.docx');`,
+    `const xml = zip.readAsText('word/document.xml');`,
+    `// Parse XML to find specific paragraphs, headings, tables`,
+    "```",
+    ``,
+    `Strategy for large .docx files:`,
+    `1. First: extract headings/structure to understand the document layout`,
+    `2. Then: extract only the sections relevant to the user's question`,
+    `NEVER dump the entire document.`,
+    ``,
+    `### Excel (.xlsx) — use exceljs`,
+    `Read specific sheets and ranges, not the whole workbook:`,
+    ``,
+    "```javascript",
+    `const ExcelJS = require('exceljs');`,
+    `const wb = new ExcelJS.Workbook();`,
+    `await wb.xlsx.readFile('file.xlsx');`,
+    `const sheet = wb.getWorksheet(1);`,
+    `// Read specific rows/columns relevant to the question`,
+    "```",
+    ``,
+    `### PowerPoint (.pptx) — use officeparser`,
+    ``,
+    "```javascript",
+    `const officeparser = require('officeparser');`,
+    `const text = await officeparser.parseOfficeAsync('file.pptx');`,
+    "```",
+    ``,
+    `## Rules`,
+    `- Always cite sources with filename and page number`,
+    `- Read the FULL source file, not just the beginning (for .md sources)`,
+    `- For non-PDF files, extract ONLY relevant sections — never dump entire files`,
+    `- Prefer primary sources over previous analyses`,
+  ];
+
+  if (save) {
+    lines.push(``, `## Research Mode`, `Save your analysis to .llm-kb/wiki/outputs/ with a descriptive filename.`, `Include the question at the top and all citations.`);
+  }
+
+  return lines.join("\n");
 }
 
 // ── Wiki update scheduler ───────────────────────────────────────────────────
@@ -186,9 +241,19 @@ function subscribeDisplay(
         if (label) {
           if (!ui && phase !== "tools") process.stdout.write("\n");
           phase = "tools";
-          if (ui) ui.addToolCall(ae.toolCall.id, label, ae.toolCall.name);
-          else {
+          if (ui) {
+            ui.addToolCall(ae.toolCall.id, label, ae.toolCall.name);
+            // Show the actual bash code the agent wrote
+            if (ae.toolCall.name === "bash" && ae.toolCall.arguments?.command) {
+              ui.addCodeBlock(ae.toolCall.arguments.command);
+            }
+          } else {
             process.stdout.write(dim(`  \u25b8 ${label}`) + "\n");
+            // Show bash code in stdout mode too
+            if (ae.toolCall.name === "bash" && ae.toolCall.arguments?.command) {
+              const code = ae.toolCall.arguments.command as string;
+              process.stdout.write(dim(code.split("\n").map(l => `    ${l}`).join("\n")) + "\n");
+            }
             shownToolCalls.add(ae.toolCall.id);
             if (ae.toolCall.name === "read") filesReadCount++;
           }

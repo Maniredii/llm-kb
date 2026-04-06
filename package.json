@@ -30,11 +30,12 @@
   "dependencies": {
     "@llamaindex/liteparse": "^1.4.4",
     "@mariozechner/pi-coding-agent": "^0.65.0",
+    "adm-zip": "^0.5.17",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^13.1.0",
     "exceljs": "^4.4.0",
-    "mammoth": "^1.12.0",
+
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "officeparser": "^6.0.7"
