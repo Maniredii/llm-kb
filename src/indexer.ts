@@ -11,29 +11,8 @@ import {
 import { getModels } from "@mariozechner/pi-ai";
 import { readdir, readFile } from "node:fs/promises";
 import { createKBSession } from "./session-store.js";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-/**
- * Find the node_modules directory for llm-kb's bundled libraries.
- * When running from bin/cli.js, node_modules is at ../node_modules.
- */
-function getNodeModulesPath(): string {
-  // Walk up from this file to find node_modules
-  let dir = __dirname;
-  for (let i = 0; i < 5; i++) {
-    const candidate = join(dir, "node_modules");
-    try {
-      return candidate;
-    } catch {
-      dir = dirname(dir);
-    }
-  }
-  return join(process.cwd(), "node_modules");
-}
+import { getNodeModulesPath } from "./utils.js";
+import { join } from "node:path";
 
 function buildAgentsContent(sourcesDir: string, files: string[]): string {
   const sourceList = files

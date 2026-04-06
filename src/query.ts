@@ -14,22 +14,9 @@ import { existsSync } from "node:fs";
 import { createKBSession, continueKBSession } from "./session-store.js";
 import { saveTrace, appendToQueryLog, KBTrace } from "./trace-builder.js";
 import { updateWiki } from "./wiki-updater.js";
-import { join, dirname, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, basename } from "node:path";
 import chalk from "chalk";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-// ── Shared helpers ──────────────────────────────────────────────────────────
-
-function getNodeModulesPath(): string {
-  let dir = __dirname;
-  for (let i = 0; i < 5; i++) {
-    const candidate = join(dir, "node_modules");
-    try { return candidate; } catch { dir = dirname(dir); }
-  }
-  return join(process.cwd(), "node_modules");
-}
+import { getNodeModulesPath } from "./utils.js";
 
 function extractAnswerText(content: any[]): string {
   return (content ?? [])

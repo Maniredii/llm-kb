@@ -1,4 +1,4 @@
 node_modules
-bin/cli.js
+bin/
 test-docs
 eng.traineddata

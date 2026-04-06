@@ -8,13 +8,11 @@ export const DEFAULT_QUERY_MODEL = "claude-sonnet-4-6";
 export interface KBConfig {
   indexModel: string;
   queryModel: string;
-  provider: string;
 }
 
 const DEFAULTS: KBConfig = {
   indexModel: DEFAULT_INDEX_MODEL,
   queryModel: DEFAULT_QUERY_MODEL,
-  provider: "anthropic",
 };
 
 function configPath(kbRoot: string): string {
@@ -23,12 +21,8 @@ function configPath(kbRoot: string): string {
 
 /**
  * Load config from .llm-kb/config.json, applying env var overrides.
- * Returns defaults if the file doesn't exist yet.
  *
- * Priority:
- * 1. Env var  (LLM_KB_INDEX_MODEL / LLM_KB_QUERY_MODEL)
- * 2. config.json
- * 3. Defaults (Haiku for index, Sonnet for query)
+ * Priority: env var > config file > defaults
  */
 export async function loadConfig(kbRoot: string): Promise<KBConfig> {
   let base: KBConfig = { ...DEFAULTS };
@@ -38,13 +32,13 @@ export async function loadConfig(kbRoot: string): Promise<KBConfig> {
     try {
       const raw = await readFile(path, "utf-8");
       const parsed = JSON.parse(raw);
-      base = { ...base, ...parsed };
+      if (parsed.indexModel) base.indexModel = parsed.indexModel;
+      if (parsed.queryModel) base.queryModel = parsed.queryModel;
     } catch {
       // Ignore malformed config — fall back to defaults
     }
   }
 
-  // Env vars always win
   if (process.env.LLM_KB_INDEX_MODEL) base.indexModel = process.env.LLM_KB_INDEX_MODEL;
   if (process.env.LLM_KB_QUERY_MODEL) base.queryModel = process.env.LLM_KB_QUERY_MODEL;
 
@@ -53,7 +47,6 @@ export async function loadConfig(kbRoot: string): Promise<KBConfig> {
 
 /**
  * Create .llm-kb/config.json with defaults if it doesn't exist yet.
- * Returns the effective config (existing or newly created).
  */
 export async function ensureConfig(kbRoot: string): Promise<KBConfig> {
   const path = configPath(kbRoot);
