@@ -5,11 +5,15 @@ import { scan, summarize } from "./scan.js";
 import { parsePDF } from "./pdf.js";
 import { buildIndex } from "./indexer.js";
 import { startWatcher } from "./watcher.js";
+import { startSessionWatcher } from "./session-watcher.js";
 import { query } from "./query.js";
 import { resolveKnowledgeBase } from "./resolve-kb.js";
+import { checkAuth, exitWithAuthError } from "./auth.js";
+import { ensureConfig, loadConfig } from "./config.js";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, stat } from "node:fs/promises";
 import { resolve, join } from "node:path";
+import * as readline from "node:readline";
 import chalk from "chalk";
 
 const program = new Command();
@@ -26,10 +30,16 @@ program
   .action(async (folder: string) => {
     console.log(`\n${chalk.bold("llm-kb")} v0.2.0\n`);
 
+    const auth = checkAuth();
+    if (!auth.ok) exitWithAuthError();
+
     if (!existsSync(folder)) {
       console.error(chalk.red(`Error: Folder not found: ${folder}`));
       process.exit(1);
     }
+
+    const root = resolve(folder);
+    const config = await ensureConfig(root);
 
     console.log(`Scanning ${folder}...`);
 
@@ -45,7 +55,6 @@ program
     if (pdfs.length === 0) return;
 
     // Set up .llm-kb folder structure
-    const root = resolve(folder);
     const sourcesDir = join(root, ".llm-kb", "wiki", "sources");
     await mkdir(sourcesDir, { recursive: true });
 
@@ -91,20 +100,77 @@ program
       console.log(chalk.red(`    ✗ ${err.name} — ${err.message}`));
     }
 
-    // Build index
-    console.log(`\n  Building index...`);
-    try {
-      await buildIndex(root, sourcesDir);
-      console.log(chalk.green(`  Index built: .llm-kb/wiki/index.md`));
-    } catch (err: any) {
-      console.error(chalk.red(`  Index failed: ${err.message}`));
+    // Build index — skip if index.md is newer than all source files and nothing was re-parsed
+    const indexFile = join(root, ".llm-kb", "wiki", "index.md");
+    let indexUpToDate = false;
+    if (parsed === 0 && existsSync(indexFile)) {
+      try {
+        const indexMtime = (await stat(indexFile)).mtimeMs;
+        const sourceFiles = await readdir(sourcesDir);
+        const sourceMtimes = await Promise.all(
+          sourceFiles.map((f) => stat(join(sourcesDir, f)).then((s) => s.mtimeMs))
+        );
+        indexUpToDate = sourceMtimes.every((mtime) => indexMtime >= mtime);
+      } catch { /* if anything fails, rebuild */ }
+    }
+
+    if (indexUpToDate) {
+      console.log(chalk.dim(`\n  Index up to date.`));
+    } else {
+      console.log(`\n  Building index... ${chalk.dim(`(${config.indexModel})`)}`);
+      try {
+        await buildIndex(root, sourcesDir, undefined, auth.authStorage, config.indexModel);
+        console.log(chalk.green(`  Index built: .llm-kb/wiki/index.md`));
+      } catch (err: any) {
+        console.error(chalk.red(`  Index failed: ${err.message}`));
+      }
     }
 
     console.log(`\n  ${chalk.dim("Output:")} ${sourcesDir}`);
 
-    // Start watching for new files
-    console.log(chalk.dim(`\n  Watching for new files... (Ctrl+C to stop)`));
-    startWatcher({ folder: root, sourcesDir });
+    // Start watching for new files + completed sessions
+    startWatcher({ folder: root, sourcesDir, authStorage: auth.authStorage, indexModel: config.indexModel });
+    startSessionWatcher(root); // async, runs silently in background
+
+    // Interactive chat loop
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    });
+
+    rl.on("close", () => {
+      console.log(chalk.dim("\n  Goodbye."));
+      process.exit(0);
+    });
+
+    const hr = () => {
+      const cols = process.stdout.columns || 80;
+      return chalk.hex("#c678dd")("─".repeat(cols));
+    };
+
+    const ask = () => {
+      process.stdout.write(`\n${hr()}\n`);
+      rl.question("", async (input) => {
+        process.stdout.write(`${hr()}\n\n`);
+        const q = input.trim();
+        if (!q) { ask(); return; }
+
+        try {
+          await query(root, q, {
+            authStorage: auth.authStorage,
+            modelId: config.queryModel,
+          });
+        } catch (err: any) {
+          console.error(chalk.red(`  Error: ${err.message}`));
+        }
+
+        ask();
+      });
+    };
+
+    console.log(`\n${chalk.bold("Ready.")} Ask a question or drop files in to re-index. ${chalk.dim("(Ctrl+C to stop)")}`);
+    ask();
   });
 
 program
@@ -114,6 +180,9 @@ program
   .option("--folder <path>", "Path to document folder (auto-detects if omitted)")
   .option("--save", "Save the answer to wiki/outputs/ (research mode)")
   .action(async (question: string, options: { folder?: string; save?: boolean }) => {
+    const auth = checkAuth();
+    if (!auth.ok) exitWithAuthError();
+
     const root = resolveKnowledgeBase(options.folder || process.cwd());
 
     if (!root) {
@@ -121,12 +190,75 @@ program
       process.exit(1);
     }
 
+    const config = await loadConfig(root);
+
     try {
-      await query(root, question, { save: options.save });
+      await query(root, question, {
+        save: options.save,
+        authStorage: auth.authStorage,
+        modelId: config.queryModel,
+      });
     } catch (err: any) {
       console.error(chalk.red(err.message));
       process.exit(1);
     }
+  });
+
+program
+  .command("status")
+  .description("Show knowledge base stats and current config")
+  .option("--folder <path>", "Path to document folder (auto-detects if omitted)")
+  .action(async (options: { folder?: string }) => {
+    const root = resolveKnowledgeBase(options.folder || process.cwd());
+
+    if (!root) {
+      console.error(chalk.red("No knowledge base found. Run 'llm-kb run <folder>' first."));
+      process.exit(1);
+    }
+
+    const auth = checkAuth();
+    const config = await loadConfig(root);
+
+    const sourcesDir = join(root, ".llm-kb", "wiki", "sources");
+    const indexFile  = join(root, ".llm-kb", "wiki", "index.md");
+    const outputsDir = join(root, ".llm-kb", "wiki", "outputs");
+
+    // Sources
+    let sourceCount = 0;
+    let sourceBreakdown = "";
+    try {
+      const files = await readdir(sourcesDir);
+      const mdFiles = files.filter((f) => f.endsWith(".md"));
+      sourceCount = mdFiles.length;
+      sourceBreakdown = `${sourceCount} parsed source${sourceCount !== 1 ? "s" : ""}`;
+    } catch { /* sources dir may not exist yet */ }
+
+    // Index last updated
+    let indexAge = "not built yet";
+    try {
+      const s = await stat(indexFile);
+      const diffMs = Date.now() - s.mtimeMs;
+      const diffMin = Math.round(diffMs / 60000);
+      indexAge = diffMin < 1 ? "just now" : diffMin < 60 ? `${diffMin} min ago` : `${Math.round(diffMin / 60)} hr ago`;
+    } catch { /* index may not exist */ }
+
+    // Outputs count
+    let outputCount = 0;
+    try {
+      const files = await readdir(outputsDir);
+      outputCount = files.filter((f) => f.endsWith(".md")).length;
+    } catch { /* outputs may not exist */ }
+
+    console.log(`\n${chalk.bold("Knowledge Base Status")}`);
+    console.log(`  ${chalk.dim("Folder:")}  ${root}`);
+    console.log(`  ${chalk.dim("Sources:")} ${sourceBreakdown || chalk.yellow("none yet")}`);
+    console.log(`  ${chalk.dim("Index:")}   ${indexAge}`);
+    if (outputCount > 0) {
+      console.log(`  ${chalk.dim("Outputs:")} ${outputCount} saved answer${outputCount !== 1 ? "s" : ""}`);
+    }
+    console.log(`  ${chalk.dim("Models:")}  ${chalk.cyan(config.queryModel)} ${chalk.dim("(query)")}  ${chalk.cyan(config.indexModel)} ${chalk.dim("(index)")}`);
+    console.log(`  ${chalk.dim("Auth:")}    ${auth.ok ? (auth.method === "pi-sdk" ? "Pi SDK" : "ANTHROPIC_API_KEY") : chalk.red("not configured")}`);
+    console.log();
   });
 
 program.parse();

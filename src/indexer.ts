@@ -6,8 +6,11 @@ import {
   DefaultResourceLoader,
   SessionManager,
   SettingsManager,
+  AuthStorage,
 } from "@mariozechner/pi-coding-agent";
+import { getModels } from "@mariozechner/pi-ai";
 import { readdir, readFile } from "node:fs/promises";
+import { createKBSession } from "./session-store.js";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,7 +75,9 @@ The index should be a markdown file with:
 export async function buildIndex(
   folder: string,
   sourcesDir: string,
-  onOutput?: (text: string) => void
+  onOutput?: (text: string) => void,
+  authStorage?: AuthStorage,
+  modelId?: string
 ): Promise<string> {
   // List source files
   const files = await readdir(sourcesDir);
@@ -100,6 +105,10 @@ export async function buildIndex(
   });
   await loader.reload();
 
+  const model = modelId
+    ? getModels("anthropic").find((m) => m.id === modelId)
+    : undefined;
+
   const { session } = await createAgentSession({
     cwd: folder,
     resourceLoader: loader,
@@ -108,10 +117,12 @@ export async function buildIndex(
       createBashTool(folder),
       createWriteTool(folder),
     ],
-    sessionManager: SessionManager.inMemory(),
+    sessionManager: await createKBSession(folder),
     settingsManager: SettingsManager.inMemory({
       compaction: { enabled: false },
     }),
+    ...(authStorage ? { authStorage } : {}),
+    ...(model ? { model } : {}),
   });
 
   // Subscribe to streaming output
@@ -125,6 +136,9 @@ export async function buildIndex(
       }
     });
   }
+
+  // Tag the session so the session-watcher can identify it as an index run
+  session.setSessionName(`index: ${new Date().toISOString()}`);
 
   // Build the prompt
   const prompt = `Read each file in .llm-kb/wiki/sources/ (one at a time, just the first 500 characters of each).

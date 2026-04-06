@@ -2,15 +2,18 @@ import { watch } from "chokidar";
 import { extname, join, basename } from "node:path";
 import { parsePDF } from "./pdf.js";
 import { buildIndex } from "./indexer.js";
+import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import chalk from "chalk";
 
 interface WatcherOptions {
   folder: string;
   sourcesDir: string;
   debounceMs?: number;
+  authStorage?: AuthStorage;
+  indexModel?: string;
 }
 
-export function startWatcher({ folder, sourcesDir, debounceMs = 2000 }: WatcherOptions) {
+export function startWatcher({ folder, sourcesDir, debounceMs = 2000, authStorage, indexModel }: WatcherOptions) {
   let pendingFiles: string[] = [];
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -39,7 +42,7 @@ export function startWatcher({ folder, sourcesDir, debounceMs = 2000 }: WatcherO
     // Re-index
     process.stdout.write(`  Re-indexing...`);
     try {
-      await buildIndex(folder, sourcesDir);
+      await buildIndex(folder, sourcesDir, undefined, authStorage, indexModel);
       console.log(chalk.green(` ✓ index.md updated`));
     } catch (err: any) {
       console.log(chalk.red(` ✗ ${err.message}`));
