@@ -167,7 +167,10 @@ function subscribeDisplay(
         if (ui) ui.appendThinking(ae.delta);
         else process.stdout.write(dim(`  ${ae.delta}`));
       }
-      if (ae.type === "thinking_end" && !ui) process.stdout.write("\n");
+      if (ae.type === "thinking_end") {
+        if (ui) ui.endThinking();
+        else process.stdout.write("\n");
+      }
     }
 
     // ── Tool calls ───────────────────────────────────────────────────────
