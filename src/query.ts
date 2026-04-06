@@ -52,7 +52,12 @@ function getToolLabel(toolName: string, args: any): string | null {
     return `${verb}  ${file}`;
   }
   if (toolName === "bash" && args?.command) {
-    return `Running  ${(args.command as string).trim().split("\n")[0].slice(0, 60)}`;
+    const cmd = (args.command as string).trim();
+    // Show the actual command for short ones, "Running script..." for multi-line
+    if (cmd.includes("\n")) {
+      return `Running  Node.js script`;
+    }
+    return `Running  ${cmd.slice(0, 80)}`;
   }
   return null;
 }
@@ -66,7 +71,7 @@ function buildQueryAgents(sourceFiles: string[], save: boolean, wikiContent: str
     : "";
   const sourceStep = wikiContent ? "If not covered in the wiki above: read the sources" : "How to answer";
 
-  let content = `# llm-kb Knowledge Base — Query Mode\n\n${wikiSection}## ${sourceStep}\n\n1. Read .llm-kb/wiki/index.md to understand all available sources\n2. Select the most relevant source files (usually 2-5) and read them in full\n3. Answer with inline citations: (filename, page number)\n4. If you can't find the answer, say so — don't hallucinate\n\n## Available parsed sources\n${sourceList}\n\n## Non-PDF files\nIf the user's folder has Excel, Word, or PowerPoint files, these libraries are available:\n- **exceljs** — for .xlsx/.xls files\n- **mammoth** — for .docx files\n- **officeparser** — for .pptx files\nWrite a quick Node.js script via bash to read them.\n\n## Rules\n- Always cite sources with filename and page number\n- Read the FULL source file, not just the beginning\n- Prefer primary sources over previous analyses\n`;
+  let content = `# llm-kb Knowledge Base — Query Mode\n\n${wikiSection}## ${sourceStep}\n\n1. Read .llm-kb/wiki/index.md to understand all available sources\n2. Select the most relevant source files (usually 2-5) and read them in full\n3. Answer with inline citations: (filename, page number)\n4. If you can't find the answer, say so — don't hallucinate\n\n## Available parsed sources\n${sourceList}\n\n## Non-PDF files\nIf the user's folder has Excel, Word, or PowerPoint files, use bash to run a Node.js script. These libraries are pre-installed:\n\n### Word (.docx) — use mammoth\n\`\`\`javascript\nconst mammoth = require('mammoth');\nconst result = await mammoth.extractRawText({ path: 'file.docx' });\nconsole.log(result.value);\n\`\`\`\nIMPORTANT: Always use extractRawText() NOT convertToHtml().\n\n### Excel (.xlsx) — use exceljs\n\`\`\`javascript\nconst ExcelJS = require('exceljs');\nconst wb = new ExcelJS.Workbook();\nawait wb.xlsx.readFile('file.xlsx');\nwb.eachSheet((sheet) => { sheet.eachRow((row) => console.log(row.values.join('\\t'))); });\n\`\`\`\n\n### PowerPoint (.pptx) — use officeparser\n\`\`\`javascript\nconst officeparser = require('officeparser');\nconst text = await officeparser.parseOfficeAsync('file.pptx');\nconsole.log(text);\n\`\`\`\n\n## Rules\n- Always cite sources with filename and page number\n- Read the FULL source file, not just the beginning\n- Prefer primary sources over previous analyses\n`;
   if (save) content += `\n## Research Mode\nSave your analysis to .llm-kb/wiki/outputs/ with a descriptive filename.\nInclude the question at the top and all citations.\n`;
   return content;
 }

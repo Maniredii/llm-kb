@@ -33,12 +33,22 @@ ${sourceList}
 
 ### Other file types (Excel, Word, PowerPoint, CSV, images)
 You have bash and read tools. These libraries are pre-installed and available:
-- **exceljs** — for .xlsx/.xls files
-- **mammoth** — for .docx files  
-- **officeparser** — for .pptx files
-- **csv-parse** — built into Node.js, use fs + split for .csv
+For .docx use mammoth:
+  const mammoth = require('mammoth');
+  const result = await mammoth.extractRawText({ path: 'file.docx' });
+  console.log(result.value);
+  IMPORTANT: Always use extractRawText() NOT convertToHtml().
 
-Write a quick Node.js script to extract content when needed.
+For .xlsx use exceljs:
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile('file.xlsx');
+  wb.eachSheet((sheet) => { sheet.eachRow((row) => console.log(row.values.join('\t'))); });
+
+For .pptx use officeparser:
+  const officeparser = require('officeparser');
+  const text = await officeparser.parseOfficeAsync('file.pptx');
+  console.log(text);
 
 ## Index file
 Write the index to \`.llm-kb/wiki/index.md\`.
