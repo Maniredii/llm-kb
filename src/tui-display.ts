@@ -188,6 +188,15 @@ export class ChatDisplay {
     this.tui.requestRender();
   }
 
+  /** Show tool execution result (success/error) */
+  addToolResult(toolCallId: string, isError: boolean): void {
+    if (!this.currentResponse) return;
+    if (isError) {
+      this.currentResponse.addChild(new Text(chalk.red("    \u2717 failed"), 0, 0));
+      this.tui.requestRender();
+    }
+  }
+
   /** Start a NEW text block with a separator (if not the first). */
   beginAnswer(): void {
     if (!this.currentResponse) return;

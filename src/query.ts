@@ -208,6 +208,12 @@ function subscribeDisplay(
       }
     }
 
+    // tool result (show errors)
+    if (event.type === "tool_execution_end") {
+      const { toolCallId, isError } = event as any;
+      if (ui) ui.addToolResult(toolCallId, isError);
+    }
+
     // ── Answer ───────────────────────────────────────────────────────────
     if (event.type === "message_update") {
       const ae = event.assistantMessageEvent;
@@ -283,8 +289,12 @@ export async function createChat(
   });
   await loader.reload();
 
-  const tools = [createReadTool(folder)];
-  if (options.save) tools.push(createBashTool(folder), createWriteTool(folder));
+  // Always include all tools — agent needs bash for .docx/.xlsx reading
+  const tools = [
+    createReadTool(folder),
+    createBashTool(folder),
+    createWriteTool(folder),
+  ];
 
   const model = options.modelId ? getModels("anthropic").find((m) => m.id === options.modelId) : undefined;
 
