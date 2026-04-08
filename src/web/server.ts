@@ -33,22 +33,25 @@ export async function startWebUI(options: WebUIOptions): Promise<void> {
 
   // ── Static files ──────────────────────────────────────────────────────
   // Serve index.html at /
-  const __filename = fileURLToPath(import.meta.url);
-  const __dirname = dirname(__filename);
+  // Resolve paths relative to the CLI entry point (bin/cli.js)
+  const cliDir = dirname(fileURLToPath(import.meta.url));
 
   app.get("/", async (c) => {
-    // In dev: read from source. In prod: read from bundled location.
-    const paths = [
-      join(__dirname, "public", "index.html"),           // bundled (bin/public/)
-      join(__dirname, "..", "web", "public", "index.html"), // dev fallback
+    // Try multiple locations to find index.html
+    const candidates = [
+      join(cliDir, "public", "index.html"),                    // bin/public/index.html
+      join(cliDir, "..", "bin", "public", "index.html"),       // from project root
+      join(cliDir, "..", "src", "web", "public", "index.html"), // dev source
+      join(process.cwd(), "bin", "public", "index.html"),       // cwd fallback
+      join(process.cwd(), "src", "web", "public", "index.html"),// cwd dev fallback
     ];
-    for (const p of paths) {
+    for (const p of candidates) {
       if (existsSync(p)) {
         const html = await readFile(p, "utf-8");
         return c.html(html);
       }
     }
-    return c.text("index.html not found", 404);
+    return c.text(`index.html not found. Searched: ${candidates.join(", ")}`, 404);
   });
 
   // ── API: Status ───────────────────────────────────────────────────────
