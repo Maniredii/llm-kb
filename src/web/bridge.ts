@@ -112,22 +112,26 @@ export async function createWebChatSession(
       const elapsed = (Date.now() - startTime) / 1000;
 
       // Build the full answer from ALL assistant text blocks in the conversation
+      // The CITATIONS block could be in any assistant message, not just the last one
       const messages = event.messages as any[];
       let fullAnswer = "";
-      // Get the last assistant message with stopReason === "stop" — that has the final answer
-      const lastAssistant = [...messages].reverse().find(
-        (m: any) => m.role === "assistant" && m.stopReason === "stop"
-      );
-      if (lastAssistant) {
-        fullAnswer = (lastAssistant.content ?? [])
-          .filter((b: any) => b.type === "text")
-          .map((b: any) => b.text ?? "")
-          .join("");
+      for (const msg of messages) {
+        if (msg.role !== "assistant") continue;
+        for (const block of msg.content ?? []) {
+          if (block.type === "text" && block.text) {
+            fullAnswer += block.text;
+          }
+        }
       }
 
-      // Parse citations from the full answer
-      const parsed = parseCitations(fullAnswer || accumulatedAnswer);
-      console.log(`[bridge] Answer length: ${fullAnswer.length}, citations found: ${parsed.citations.length}`);
+      // Parse citations from the full answer (or streamed accumulation as fallback)
+      const textToSearch = fullAnswer || accumulatedAnswer;
+      const parsed = parseCitations(textToSearch);
+      console.log(`[bridge] Full answer: ${fullAnswer.length} chars, streamed: ${accumulatedAnswer.length} chars, citations: ${parsed.citations.length}`);
+      // Debug: show last 300 chars to see if CITATIONS block is there
+      if (parsed.citations.length === 0 && textToSearch.length > 0) {
+        console.log(`[bridge] No citations found. Last 300 chars: ...${textToSearch.slice(-300)}`);
+      }
       if (parsed.citations.length > 0) {
         send({ type: "citations", data: parsed.citations });
       }
