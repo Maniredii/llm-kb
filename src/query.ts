@@ -130,12 +130,17 @@ function buildQueryAgents(sourceFiles: string[], save: boolean, wikiContent: str
     ``,
     `### How to build citations with bounding boxes:`,
     `1. When you read a source .md file (e.g. "document.md"), note the exact quote and page number`,
-    `2. Read the corresponding .json file in the SAME directory (e.g. "document.json")`,
-    `3. The JSON file contains bounding box data for every text item on every page`,
-    `4. Find the textItems that contain your quoted text on the cited page`,
-    `5. Include the bounding box coordinates in your citation`,
-    `6. IMPORTANT: Even when answering from the wiki, you MUST still read the .json`,
-    `   files to find bounding boxes. The wiki has page numbers — use them to look up bbox.`,
+    `2. ALWAYS read the corresponding .json file in the SAME directory (e.g. "document.json")`,
+    `3. The JSON file contains bounding box data: pages[].textItems[] with {text, x, y, width, height}`,
+    `4. Use bash + node to search textItems for your quoted text on the cited page`,
+    `5. Compute the merged bounding box covering all matching textItems`,
+    `6. Include the bbox coordinates in your citation`,
+    ``,
+    `CRITICAL: Every citation MUST have a bbox. No exceptions.`,
+    `- Even when answering from the wiki, read the .json file to find the bbox`,
+    `- The wiki includes page numbers (Source: filename, p.X) — use those to look up the right page in the .json`,
+    `- Run a bash/node script to search the .json textItems and compute the merged bbox`,
+    `- A citation without bbox is incomplete and unacceptable`,
     ``,
     `### Citation block format:`,
     ``,
@@ -150,10 +155,9 @@ function buildQueryAgents(sourceFiles: string[], save: boolean, wikiContent: str
     `- Use the ORIGINAL filename (the .pdf name), not the .md parsed version`,
     `  The .json files have a "source" field with the original PDF name — use that`,
     `- The quote MUST be EXACT text from the source`,
-    `- ALWAYS read the .json file to find bounding boxes — even for wiki-sourced answers`,
+    `- ALWAYS read the .json file to find bounding boxes — every citation MUST have bbox`,
     `- The bbox should be the merged rectangle covering all textItems that make up the quote`,
-    `- If you cannot find the bbox, omit the bbox field but still include the citation`,
-    `- Every factual claim must have at least one citation`,
+    `- Every factual claim must have at least one citation with bbox`,
     ``,
     `## Guidelines`,
     `A guidelines file may exist at .llm-kb/guidelines.md with learned rules from`,
@@ -362,11 +366,18 @@ function subscribeDisplay(
               ? `p.${c.pages.map((p: any) => p.page).join("-")}`
               : `p.${c.page}`;
             const hasBbox = c.bbox || (c.pages && c.pages.length > 0);
-            const icon = hasBbox ? "\u2705" : "\u26a0\ufe0f";
+            let bboxDetail: string;
+            if (c.pages && c.pages.length > 0) {
+              bboxDetail = `\u2705 bbox (${c.pages.length} pages)`;
+            } else if (c.bbox) {
+              bboxDetail = `\u2705 bbox (${c.bbox.x},${c.bbox.y} \u2192 ${Math.round(c.bbox.x + c.bbox.width)},${Math.round(c.bbox.y + c.bbox.height)})`;
+            } else {
+              bboxDetail = `\u26a0\ufe0f  no bbox`;
+            }
             const quote = c.quote.length > 60 ? c.quote.slice(0, 57) + "..." : c.quote;
             process.stdout.write(`\n  ${chalk.bold(`[${i + 1}]`)} \ud83d\udcc4 ${c.file}, ${pageStr}\n`);
             process.stdout.write(dim(`      "${quote}"`) + "\n");
-            process.stdout.write(`      ${icon} ${hasBbox ? "bbox" : "no bbox"}\n`);
+            process.stdout.write(`      ${bboxDetail}\n`);
           }
         }
 
