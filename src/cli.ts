@@ -13,23 +13,30 @@ import { resolveKnowledgeBase } from "./resolve-kb.js";
 import { checkAuth, exitWithAuthError } from "./auth.js";
 import { ensureConfig, loadConfig } from "./config.js";
 import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdir, readdir, stat } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+const VERSION = pkg.version;
 
 const program = new Command();
 
 program
   .name("llm-kb")
   .description("Drop files into a folder. Get a knowledge base you can query.")
-  .version("0.4.0");
+  .version(VERSION);
 
 program
   .command("run")
   .description("Scan, parse, index, and watch a folder")
   .argument("<folder>", "Path to your documents folder")
   .action(async (folder: string) => {
-    console.log(`\n${chalk.bold("llm-kb")} v0.4.0\n`);
+    console.log(`\n${chalk.bold("llm-kb")} v${VERSION}\n`);
 
     const auth = checkAuth();
     if (!auth.ok) exitWithAuthError();
