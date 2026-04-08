@@ -236,7 +236,8 @@ function handleEvent(data) {
 
 // ── Send ─────────────────────────────────────────────────────
 function sendMessage(text) {
-  if (!ready || streaming || !text.trim()) return;
+  if (!ready) { addSystemMessage('Session still initializing, please wait...'); return; }
+  if (streaming || !text.trim()) return;
   if (welcomeEl) { welcomeEl.remove(); }
   streaming = true;
   input.disabled = true;

@@ -37,7 +37,9 @@ export async function createWebChatSession(
   });
 
   const send = (data: any) => {
-    try { ws.send(JSON.stringify(data)); } catch {}
+    try { ws.send(JSON.stringify(data)); } catch (e) {
+      console.error("[bridge] WS send failed:", e);
+    }
   };
 
   let startTime = Date.now();

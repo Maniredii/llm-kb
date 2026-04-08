@@ -216,44 +216,61 @@ export async function startWebUI(options: WebUIOptions): Promise<void> {
 
   app.get("/ws/chat", upgradeWebSocket((c) => {
     let chatSession: Awaited<ReturnType<typeof createWebChatSession>> | null = null;
+    let creating = false;
+    let wsRef: any = null;
 
     return {
-      async onOpen(evt, ws) {
+      onOpen(evt, ws) {
+        wsRef = ws;
+        console.log("[ws] Client connected");
         ws.send(JSON.stringify({ type: "connected", message: "llm-kb web UI ready" }));
 
-        // Create agent session
-        try {
-          chatSession = await createWebChatSession(folder, {
-            send(data: string) { ws.send(data); },
-          }, {
-            authStorage: options.authStorage,
-            modelId: options.modelId,
-          });
-          ws.send(JSON.stringify({ type: "ready" }));
-        } catch (err: any) {
-          ws.send(JSON.stringify({ type: "error", message: err.message }));
-        }
+        // Create agent session in background
+        creating = true;
+        createWebChatSession(folder, {
+          send(data: string) {
+            try { wsRef?.send(data); } catch (e) { console.error("[ws] send error:", e); }
+          },
+        }, {
+          authStorage: options.authStorage,
+          modelId: options.modelId,
+        }).then((session) => {
+          chatSession = session;
+          creating = false;
+          console.log("[ws] Agent session ready");
+          try { wsRef?.send(JSON.stringify({ type: "ready" })); } catch {}
+        }).catch((err: any) => {
+          creating = false;
+          console.error("[ws] Session creation failed:", err.message);
+          try { wsRef?.send(JSON.stringify({ type: "error", message: err.message })); } catch {}
+        });
       },
       onMessage(evt, ws) {
         const raw = typeof evt.data === "string" ? evt.data : "";
         let data: any;
         try { data = JSON.parse(raw); } catch { return; }
 
+        console.log("[ws] Received:", data.type, data.text?.slice(0, 50));
+
         if (data.type === "message" && data.text) {
           if (!chatSession) {
-            ws.send(JSON.stringify({ type: "error", message: "Session not ready" }));
+            const msg = creating ? "Session still initializing, please wait..." : "Session not ready";
+            ws.send(JSON.stringify({ type: "error", message: msg }));
             return;
           }
           chatSession.prompt(data.text).catch((err: any) => {
-            ws.send(JSON.stringify({ type: "error", message: err.message }));
+            console.error("[ws] Prompt error:", err.message);
+            try { ws.send(JSON.stringify({ type: "error", message: err.message })); } catch {}
           });
         }
       },
       onClose() {
+        console.log("[ws] Client disconnected");
         if (chatSession) {
           chatSession.dispose();
           chatSession = null;
         }
+        wsRef = null;
       },
     };
   }));
