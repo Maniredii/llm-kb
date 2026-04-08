@@ -111,8 +111,23 @@ export async function createWebChatSession(
     if (event.type === "agent_end") {
       const elapsed = (Date.now() - startTime) / 1000;
 
-      // Parse citations from the accumulated answer
-      const parsed = parseCitations(accumulatedAnswer);
+      // Build the full answer from ALL assistant text blocks in the conversation
+      const messages = event.messages as any[];
+      let fullAnswer = "";
+      // Get the last assistant message with stopReason === "stop" — that has the final answer
+      const lastAssistant = [...messages].reverse().find(
+        (m: any) => m.role === "assistant" && m.stopReason === "stop"
+      );
+      if (lastAssistant) {
+        fullAnswer = (lastAssistant.content ?? [])
+          .filter((b: any) => b.type === "text")
+          .map((b: any) => b.text ?? "")
+          .join("");
+      }
+
+      // Parse citations from the full answer
+      const parsed = parseCitations(fullAnswer || accumulatedAnswer);
+      console.log(`[bridge] Answer length: ${fullAnswer.length}, citations found: ${parsed.citations.length}`);
       if (parsed.citations.length > 0) {
         send({ type: "citations", data: parsed.citations });
       }
@@ -122,7 +137,7 @@ export async function createWebChatSession(
         elapsed: Math.round(elapsed * 10) / 10,
         filesRead: filesReadCount,
         citationCount: parsed.citations.length,
-        answer: parsed.answer, // clean answer without CITATIONS block
+        answer: parsed.answer,
       });
     }
   });
