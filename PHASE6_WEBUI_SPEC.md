@@ -89,36 +89,65 @@ WS   /ws/chat               → streaming agent session
 
 ## Layout
 
+### Default — Full-Width Chat
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  llm-kb                                    [Chat] [Wiki] [Src] │
-├────────────────────────────┬────────────────────────────────────┤
-│                            │                                    │
-│  Chat Panel                │  Source Viewer                     │
-│                            │                                    │
-│  ⟡ claude-sonnet-4-6      │  ┌────────────────────────────┐    │
-│                            │  │                            │    │
-│  ▸ Reading file.md         │  │   PDF page rendered        │    │
-│  ▸ Running bash            │  │   via pdf.js               │    │
-│                            │  │                            │    │
-│  The divorce was granted   │  │   ┌──────────────────┐     │    │
-│  on 17 August 2020. [1]    │  │   │ ██ HIGHLIGHTED ██ │     │    │
-│                            │  │   │ ██ BBOX REGION ██ │     │    │
-│  ── Citations ──           │  │   └──────────────────┘     │    │
-│  [1] 📄 List.pdf, p.3     │  │                            │    │
-│      ✅ bbox               │  └────────────────────────────┘    │
-│                            │                                    │
-│  ┌──────────────────────┐  │  ◄ Page 3 of 3 ►                  │
-│  │ Ask anything...      │  │  [Fit] [100%] [200%]              │
-│  └──────────────────────┘  │                                    │
-├────────────────────────────┴────────────────────────────────────┤
+│  llm-kb                                    [Chat] [Wiki]       │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│              ⟡ claude-sonnet-4-6                                │
+│                                                                 │
+│              ▸ Reading file.md                                  │
+│              ▸ Running bash                                     │
+│                                                                 │
+│              The divorce was granted on 17 August 2020. [1]     │
+│                                                                 │
+│              ── Citations ──────────────────────                 │
+│              [1] 📄 List.pdf, p.3  ✅ bbox       ← clickable   │
+│              [2] 📄 Judgment.pdf, p.11  ✅ bbox                 │
+│                                                                 │
+│              ┌────────────────────────────────┐                 │
+│              │ Ask anything...                │                 │
+│              └────────────────────────────────┘                 │
+├─────────────────────────────────────────────────────────────────┤
 │  3 sources · 12 wiki concepts · 100% bbox coverage              │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Left panel (50%):** Chat — messages stream in, citations at bottom
-- **Right panel (50%):** Source Viewer — PDF page with SVG highlight overlay
-- **Responsive:** On narrow screens (<768px), stacked vertically
+### Click Citation → Sheet Slides In From Right
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  llm-kb                                    [Chat] [Wiki]       │
+├──────────────────────────┬──────────────────────────────────────┤
+│                          │  Source Viewer (Sheet)          [✕]  │
+│  Chat (pushed left)      │                                      │
+│                          │  📄 List of Dates.pdf — Page 3 of 3 │
+│  ...answer text...       │  ┌──────────────────────────────┐    │
+│                          │  │                              │    │
+│  ── Citations ──         │  │  PDF page rendered           │    │
+│  [1] 📄 List.pdf ← sel  │  │  via pdf.js                  │    │
+│  [2] 📄 Judgment.pdf     │  │                              │    │
+│                          │  │  ┌────────────────────┐      │    │
+│                          │  │  │ ██ HIGHLIGHTED ██  │      │    │
+│                          │  │  │ ██ BBOX REGION ██  │      │    │
+│                          │  │  └────────────────────┘      │    │
+│  ┌────────────────────┐  │  │                              │    │
+│  │ Ask anything...    │  │  └──────────────────────────────┘    │
+│  └────────────────────┘  │  ◄ Page 3 of 3 ►   [Fit] [100%]     │
+├──────────────────────────┴──────────────────────────────────────┤
+│  3 sources · 12 wiki concepts · 100% bbox coverage              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- **Default:** Chat is full-width, centered content (max-width 720px, like Hercules)
+- **On citation click:** Sheet slides in from right (~50% width), chat panel narrows
+- **Sheet header:** Filename, page number, close [✕] button
+- **Sheet body:** PDF page canvas + SVG highlight overlay
+- **Sheet footer:** Page navigation ◄ ► and zoom controls
+- **Close sheet:** Click ✕ or press Escape → sheet slides out, chat goes full-width again
+- **Multiple citations:** Clicking a different citation updates the sheet (no close/reopen)
 - **Status bar:** Bottom — source count, wiki concepts, citation stats
 
 ---
