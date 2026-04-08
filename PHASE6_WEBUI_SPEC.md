@@ -78,7 +78,9 @@ hono — lightweight HTTP framework (~200KB)
 ```
 GET  /                      → index.html (SPA)
 GET  /api/status            → KB stats (sources, wiki, config)
-GET  /api/sources            → list of source files [{name, pages, hasJson}]
+GET  /api/sources           → list of source files [{name, pages, hasJson}]
+GET  /api/sessions          → list of previous sessions [{id, question, timestamp, citationCount}]
+GET  /api/sessions/:id      → full session data (messages, citations, trace)
 GET  /api/pdf/:filename     → serve original PDF from user's folder
 GET  /api/bbox/:filename    → serve bbox JSON from .llm-kb/wiki/sources/
 GET  /api/wiki              → wiki.md content
@@ -89,29 +91,30 @@ WS   /ws/chat               → streaming agent session
 
 ## Layout
 
-### Default — Full-Width Chat
+### Default — Sidebar + Full-Width Chat
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  llm-kb                                    [Chat] [Wiki]       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│              ⟡ claude-sonnet-4-6                                │
-│                                                                 │
-│              ▸ Reading file.md                                  │
-│              ▸ Running bash                                     │
-│                                                                 │
-│              The divorce was granted on 17 August 2020. [1]     │
-│                                                                 │
-│              ── Citations ──────────────────────                 │
-│              [1] 📄 List.pdf, p.3  ✅ bbox       ← clickable   │
-│              [2] 📄 Judgment.pdf, p.11  ✅ bbox                 │
-│                                                                 │
-│              ┌────────────────────────────────┐                 │
-│              │ Ask anything...                │                 │
-│              └────────────────────────────────┘                 │
-├─────────────────────────────────────────────────────────────────┤
-│  3 sources · 12 wiki concepts · 100% bbox coverage              │
+┌──────────┬──────────────────────────────────────────────────────┐
+│  llm-kb  │                                [Chat] [Wiki]       │
+├──────────┼──────────────────────────────────────────────────────┤
+│          │                                                    │
+│ Sessions │          ⟡ claude-sonnet-4-6                       │
+│          │                                                    │
+│ 💬 When  │          ▸ Reading file.md                          │
+│ was the  │          ▸ Running bash                             │
+│ divorce  │                                                    │
+│ granted  │          The divorce was granted on                │
+│ 2m ago   │          17 August 2020. [1]                      │
+│          │                                                    │
+│ 💬 When  │          ── Citations ──                             │
+│ did the  │          [1] 📄 List.pdf, p.3  ✅     ← clickable  │
+│ wife...  │          [2] 📄 Judgment.pdf, p.11  ✅             │
+│ 1h ago   │                                                    │
+│          │          ┌──────────────────────────────┐            │
+│──────────│          │ Ask anything...            │            │
+│ + New    │          └──────────────────────────────┘            │
+├──────────┴──────────────────────────────────────────────────────┤
+│  3 sources · 12 wiki concepts · 100% bbox coverage             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -141,14 +144,36 @@ WS   /ws/chat               → streaming agent session
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-- **Default:** Chat is full-width, centered content (max-width 720px, like Hercules)
-- **On citation click:** Sheet slides in from right (~50% width), chat panel narrows
+### Sidebar (Left, ~200px)
+
+- **Brand:** "llm-kb" serif heading at top (like Hercules "Hercules" branding)
+- **Sessions list:** Previous query sessions, newest first
+  - Each shows: 💬 title (first ~30 chars of question), relative time ("2m ago")
+  - Click to load that session's Q&A into the chat panel
+  - Active session highlighted
+- **"+ New" button** at bottom to start a fresh conversation
+- **Collapsible** on narrow screens (hamburger menu)
+- **Data source:** Read from `.llm-kb/sessions/` JSONL files + trace JSON
+- **Dark background** like Hercules sidebar (`#2A1845` purple-bg)
+
+### Chat (Center)
+
+- **Full-width** centered content (max-width 720px, like Hercules)
+- Messages stream in with thinking, tool calls, answer text
+- Citations displayed as clickable chips below each answer
+
+### Source Viewer (Right Sheet)
+
+- **On citation click:** Sheet slides in from right (~50% width), chat narrows
 - **Sheet header:** Filename, page number, close [✕] button
 - **Sheet body:** PDF page canvas + SVG highlight overlay
 - **Sheet footer:** Page navigation ◄ ► and zoom controls
-- **Close sheet:** Click ✕ or press Escape → sheet slides out, chat goes full-width again
+- **Close sheet:** Click ✕ or press Escape → sheet slides out, chat goes full-width
 - **Multiple citations:** Clicking a different citation updates the sheet (no close/reopen)
-- **Status bar:** Bottom — source count, wiki concepts, citation stats
+
+### Status Bar (Bottom)
+
+- Source count, wiki concepts, citation stats
 
 ---
 
@@ -262,19 +287,20 @@ This is a thin adapter. The agent session is identical to TUI mode — same AGEN
 | **W1** | Hono server + `llm-kb ui` command + serve static HTML | 0.5 day | Browser opens at localhost:3947 |
 | **W2** | WebSocket chat — send message, receive streaming events | 1 day | Basic chat works in browser |
 | **W3** | Agent bridge — route session events to WebSocket JSON | 0.5 day | Full streaming: thinking, tools, text |
-| **W4** | Chat panel UI — messages, tool cards, thinking dots | 1 day | Chat looks like Hercules |
-| **W5** | Citation parsing on client + citation chips below answers | 0.5 day | Clickable [1] [2] chips |
-| **W6** | PDF endpoint + client-side pdf.js page rendering | 1 day | Right panel shows PDF page |
-| **W7** | SVG highlight overlay — click citation → highlight bbox | 0.5 day | The magic moment |
-| **W8** | Citation verification — cross-check agent's bbox using `citations.ts` | 0.5 day | ✅/⚠️/❌ per citation |
-| **W9** | Wiki tab + status bar + polish | 0.5 day | Complete UI |
-| **Total** | | **~6 days** | |
+| **W4** | Chat panel UI — messages, tool cards, thinking dots (Hercules style) | 1 day | Chat looks like Hercules |
+| **W5** | Sidebar — session list from `.llm-kb/sessions/`, click to load, + New | 0.5 day | Browse previous conversations |
+| **W6** | Citation parsing on client + citation chips below answers | 0.5 day | Clickable [1] [2] chips |
+| **W7** | PDF endpoint + client-side pdf.js page rendering | 1 day | Sheet shows PDF page |
+| **W8** | SVG highlight overlay — click citation → sheet with highlighted bbox | 0.5 day | The magic moment |
+| **W9** | Citation verification — cross-check agent's bbox using `citations.ts` | 0.5 day | ✅/⚠️/❌ per citation |
+| **W10** | Wiki tab + status bar + polish | 0.5 day | Complete UI |
+| **Total** | | **~6.5 days** | |
 
 ### Critical Path
 
-W1 → W2 → W3 → W4 (chat works) → W5 (citations clickable) → W6 → W7 (highlight on PDF).
+W1 → W2 → W3 → W4 (chat works) → W5 (sidebar) → W6 (citations clickable) → W7 → W8 (highlight on PDF).
 
-W8 (verification) and W9 (wiki/polish) are independent and can come after.
+W9 (verification) and W10 (wiki/polish) are independent and can come after.
 
 ---
 
