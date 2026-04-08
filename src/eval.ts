@@ -1,10 +1,11 @@
-import { getModels, completeSimple } from "@mariozechner/pi-ai";
+import { completeSimple } from "@mariozechner/pi-ai";
+import { resolveModel, resolveApiKey as resolveApiKeyFromProvider } from "./model-resolver.js";
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
-import { homedir } from "node:os";
+
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -228,12 +229,8 @@ function calculateMetrics(qas: SessionQA[]): EvalMetrics {
 // ── LLM judge ───────────────────────────────────────────────────────────────
 
 async function resolveApiKey(authStorage?: AuthStorage): Promise<string | undefined> {
-  if (authStorage) return authStorage.getApiKey("anthropic");
-  const piAuthPath = join(homedir(), ".pi", "agent", "auth.json");
-  if (existsSync(piAuthPath)) {
-    const storage = AuthStorage.create(piAuthPath);
-    return storage.getApiKey("anthropic");
-  }
+  const result = await resolveApiKeyFromProvider(authStorage);
+  if (result) return result.key;
   return process.env.ANTHROPIC_API_KEY;
 }
 
@@ -243,7 +240,7 @@ async function judgeQA(
   modelId: string
 ): Promise<EvalIssue[]> {
   const issues: EvalIssue[] = [];
-  const model = getModels("anthropic").find((m) => m.id === modelId);
+  const model = await resolveModel(modelId);
   if (!model) return issues;
 
   // Build context for the judge

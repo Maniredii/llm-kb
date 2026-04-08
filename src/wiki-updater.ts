@@ -1,20 +1,14 @@
-import { getModels, completeSimple } from "@mariozechner/pi-ai";
+import { completeSimple } from "@mariozechner/pi-ai";
 import { AuthStorage } from "@mariozechner/pi-coding-agent";
 import { existsSync } from "node:fs";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import type { KBTrace } from "./trace-builder.js";
+import { resolveModel, resolveApiKey as resolveApiKeyFromProvider } from "./model-resolver.js";
 
 async function resolveApiKey(authStorage?: AuthStorage): Promise<string | undefined> {
-  if (authStorage) {
-    return authStorage.getApiKey("anthropic");
-  }
-  const piAuthPath = join(homedir(), ".pi", "agent", "auth.json");
-  if (existsSync(piAuthPath)) {
-    const storage = AuthStorage.create(piAuthPath);
-    return storage.getApiKey("anthropic");
-  }
+  const result = await resolveApiKeyFromProvider(authStorage);
+  if (result) return result.key;
   return process.env.ANTHROPIC_API_KEY;
 }
 
@@ -112,7 +106,7 @@ export async function updateWiki(
   const apiKey = await resolveApiKey(authStorage);
   if (!apiKey) return;
 
-  const model = getModels("anthropic").find((m) => m.id === indexModelId);
+  const model = await resolveModel(indexModelId, authStorage);
   if (!model) return;
 
   const result = await completeSimple(

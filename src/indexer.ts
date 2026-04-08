@@ -8,7 +8,7 @@ import {
   SettingsManager,
   AuthStorage,
 } from "@mariozechner/pi-coding-agent";
-import { getModels } from "@mariozechner/pi-ai";
+import { resolveModel } from "./model-resolver.js";
 import { readdir, readFile } from "node:fs/promises";
 import { createKBSession } from "./session-store.js";
 import { getNodeModulesPath } from "./utils.js";
@@ -96,7 +96,7 @@ export async function buildIndex(
   await loader.reload();
 
   const model = modelId
-    ? getModels("anthropic").find((m) => m.id === modelId)
+    ? await resolveModel(modelId, authStorage)
     : undefined;
 
   const { session } = await createAgentSession({

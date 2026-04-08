@@ -8,7 +8,7 @@ import {
   AuthStorage,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
-import { getModels } from "@mariozechner/pi-ai";
+import { resolveModel } from "./model-resolver.js";
 import { readdir, mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createKBSession, continueKBSession } from "./session-store.js";
@@ -373,7 +373,7 @@ export async function createChat(
     createWriteTool(folder),
   ];
 
-  const model = options.modelId ? getModels("anthropic").find((m) => m.id === options.modelId) : undefined;
+  const model = options.modelId ? await resolveModel(options.modelId, options.authStorage) : undefined;
 
   const { session } = await createAgentSession({
     cwd: folder,
