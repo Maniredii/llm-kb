@@ -11,9 +11,11 @@ interface WatcherOptions {
   debounceMs?: number;
   authStorage?: AuthStorage;
   indexModel?: string;
+  /** Called after new files are parsed & re-indexed so the chat session sees them */
+  onSourcesChanged?: () => Promise<void>;
 }
 
-export function startWatcher({ folder, sourcesDir, debounceMs = 2000, authStorage, indexModel }: WatcherOptions) {
+export function startWatcher({ folder, sourcesDir, debounceMs = 2000, authStorage, indexModel, onSourcesChanged }: WatcherOptions) {
   let pendingFiles: string[] = [];
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -44,6 +46,12 @@ export function startWatcher({ folder, sourcesDir, debounceMs = 2000, authStorag
     try {
       await buildIndex(folder, sourcesDir, undefined, authStorage, indexModel);
       console.log(chalk.green(` ✓ index.md updated`));
+      // Notify the chat session so it picks up the new files
+      if (onSourcesChanged) {
+        try {
+          await onSourcesChanged();
+        } catch {}
+      }
     } catch (err: any) {
       console.log(chalk.red(` ✗ ${err.message}`));
     }

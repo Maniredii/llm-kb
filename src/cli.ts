@@ -119,17 +119,17 @@ program
 
     console.log(`\n  ${chalk.dim("Output:")} ${sourcesDir}`);
 
-    // Start watchers
-    startWatcher({ folder: root, sourcesDir, authStorage: auth.authStorage, indexModel: config.indexModel });
-    startSessionWatcher(root);
-
     // TUI chat
     const chatUI = new ChatDisplay();
-    const { session, display } = await createChat(root, {
+    const { session, display, reloadSources } = await createChat(root, {
       authStorage: auth.authStorage,
       modelId: config.queryModel,
       tuiDisplay: chatUI,
     });
+
+    // Start watchers — pass reloadSources so the chat picks up new files
+    startWatcher({ folder: root, sourcesDir, authStorage: auth.authStorage, indexModel: config.indexModel, onSourcesChanged: reloadSources });
+    startSessionWatcher(root);
 
     chatUI.onSubmit = (text) => {
       display.setQuestion(text);

@@ -10,7 +10,7 @@ import {
 import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import { resolveModel } from "./model-resolver.js";
 import { readdir, mkdir, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { createKBSession, continueKBSession } from "./session-store.js";
 import { saveTrace, appendToQueryLog, type KBTrace } from "./trace-builder.js";
 import { parseCitations } from "./citations.js";
@@ -411,6 +411,8 @@ function subscribeDisplay(
 export interface ChatSession {
   session: AgentSession;
   display: ReturnType<typeof subscribeDisplay>;
+  /** Call after new files are parsed & re-indexed so the agent sees them */
+  reloadSources(): Promise<void>;
 }
 
 export async function createChat(
@@ -426,14 +428,19 @@ export async function createChat(
   process.env.NODE_PATH = getNodeModulesPath();
 
   const wikiPath = join(folder, ".llm-kb", "wiki", "wiki.md");
-  const wikiContent = existsSync(wikiPath) ? await readFile(wikiPath, "utf-8").catch(() => "") : "";
-  const agentsContent = buildQueryAgents(mdFiles, !!options.save, wikiContent);
+  const save = !!options.save;
 
+  // Build AGENTS.md dynamically on every reload so new files are picked up
   const loader = new DefaultResourceLoader({
     cwd: folder,
-    agentsFilesOverride: (current) => ({
-      agentsFiles: [...current.agentsFiles, { path: ".llm-kb/AGENTS.md", content: agentsContent }],
-    }),
+    agentsFilesOverride: (current) => {
+      const currentFiles = readdirSync(sourcesDir).filter((f: string) => f.endsWith(".md"));
+      const wiki = existsSync(wikiPath) ? readFileSync(wikiPath, "utf-8") : "";
+      const content = buildQueryAgents(currentFiles, save, wiki);
+      return {
+        agentsFiles: [...current.agentsFiles, { path: ".llm-kb/AGENTS.md", content }],
+      };
+    },
   });
   await loader.reload();
 
@@ -462,7 +469,12 @@ export async function createChat(
     folder, mdFiles, tuiDisplay: options.tuiDisplay,
   });
 
-  return { session, display };
+  async function reloadSources() {
+    await loader.reload();
+    await session.reload();
+  }
+
+  return { session, display, reloadSources };
 }
 
 // ── One-shot query (stdout mode, for `llm-kb query` command) ────────────────
