@@ -1,0 +1,248 @@
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, basename } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { exec } from "node:child_process";
+import type { AuthStorage } from "@mariozechner/pi-coding-agent";
+
+// ── Types ───────────────────────────────────────────────────────────────────
+
+export interface WebUIOptions {
+  folder: string;
+  port: number;
+  open: boolean;
+  authStorage?: AuthStorage;
+  modelId?: string;
+}
+
+// ── Server ──────────────────────────────────────────────────────────────────
+
+export async function startWebUI(options: WebUIOptions): Promise<void> {
+  const { folder, port, open } = options;
+  const kbDir = join(folder, ".llm-kb");
+  const sourcesDir = join(kbDir, "wiki", "sources");
+
+  const app = new Hono();
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+  // ── Static files ──────────────────────────────────────────────────────
+  // Serve index.html at /
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+
+  app.get("/", async (c) => {
+    // In dev: read from source. In prod: read from bundled location.
+    const paths = [
+      join(__dirname, "public", "index.html"),           // bundled (bin/public/)
+      join(__dirname, "..", "web", "public", "index.html"), // dev fallback
+    ];
+    for (const p of paths) {
+      if (existsSync(p)) {
+        const html = await readFile(p, "utf-8");
+        return c.html(html);
+      }
+    }
+    return c.text("index.html not found", 404);
+  });
+
+  // ── API: Status ───────────────────────────────────────────────────────
+
+  app.get("/api/status", async (c) => {
+    let sourceCount = 0;
+    let wikiExists = false;
+    let wikiConcepts = 0;
+
+    try {
+      const files = await readdir(sourcesDir);
+      sourceCount = files.filter((f) => f.endsWith(".md")).length;
+    } catch {}
+
+    const wikiPath = join(kbDir, "wiki", "wiki.md");
+    if (existsSync(wikiPath)) {
+      wikiExists = true;
+      try {
+        const wiki = await readFile(wikiPath, "utf-8");
+        wikiConcepts = (wiki.match(/^## /gm) || []).length;
+      } catch {}
+    }
+
+    return c.json({ sourceCount, wikiExists, wikiConcepts, folder });
+  });
+
+  // ── API: Sources ──────────────────────────────────────────────────────
+
+  app.get("/api/sources", async (c) => {
+    try {
+      const files = await readdir(sourcesDir);
+      const sources = [];
+      for (const f of files.filter((f) => f.endsWith(".json"))) {
+        try {
+          const data = JSON.parse(await readFile(join(sourcesDir, f), "utf-8"));
+          sources.push({
+            name: data.source || f.replace(".json", ".pdf"),
+            pages: data.totalPages || 0,
+            jsonFile: f,
+            mdFile: f.replace(".json", ".md"),
+          });
+        } catch {}
+      }
+      return c.json(sources);
+    } catch {
+      return c.json([]);
+    }
+  });
+
+  // ── API: Sessions ─────────────────────────────────────────────────────
+
+  app.get("/api/sessions", async (c) => {
+    const sessionsDir = join(kbDir, "sessions");
+    const tracesDir = join(kbDir, "traces");
+    try {
+      // Read traces (they have structured data)
+      const traceFiles = existsSync(tracesDir)
+        ? (await readdir(tracesDir)).filter((f) => f.endsWith(".json"))
+        : [];
+
+      const sessions = [];
+      for (const f of traceFiles) {
+        try {
+          const trace = JSON.parse(await readFile(join(tracesDir, f), "utf-8"));
+          if (trace.mode === "query" && trace.question) {
+            sessions.push({
+              id: trace.sessionId,
+              question: trace.question,
+              timestamp: trace.timestamp,
+              model: trace.model,
+              citationCount: trace.citations?.length ?? 0,
+              filesRead: trace.filesRead?.length ?? 0,
+            });
+          }
+        } catch {}
+      }
+
+      // Sort newest first
+      sessions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return c.json(sessions);
+    } catch {
+      return c.json([]);
+    }
+  });
+
+  app.get("/api/sessions/:id", async (c) => {
+    const id = c.req.param("id");
+    const tracesDir = join(kbDir, "traces");
+    const tracePath = join(tracesDir, `${id}.json`);
+
+    if (!existsSync(tracePath)) return c.json({ error: "Not found" }, 404);
+
+    try {
+      const trace = JSON.parse(await readFile(tracePath, "utf-8"));
+      return c.json(trace);
+    } catch {
+      return c.json({ error: "Failed to read trace" }, 500);
+    }
+  });
+
+  // ── API: PDF files ────────────────────────────────────────────────────
+
+  app.get("/api/pdf/:filename", async (c) => {
+    const filename = decodeURIComponent(c.req.param("filename"));
+    // Search for the PDF in the user's folder
+    const pdfPath = join(folder, filename);
+    if (existsSync(pdfPath)) {
+      const buf = await readFile(pdfPath);
+      return c.body(buf, { headers: { "Content-Type": "application/pdf" } });
+    }
+    // Try without number prefix
+    try {
+      const files = await readdir(folder);
+      const match = files.find((f) => f.endsWith(".pdf") && f.includes(filename.replace(/^\d+\.\s*/, "")));
+      if (match) {
+        const buf = await readFile(join(folder, match));
+        return c.body(buf, { headers: { "Content-Type": "application/pdf" } });
+      }
+    } catch {}
+    return c.text("PDF not found", 404);
+  });
+
+  // ── API: Bbox JSON ────────────────────────────────────────────────────
+
+  app.get("/api/bbox/:filename", async (c) => {
+    const filename = decodeURIComponent(c.req.param("filename"));
+    // Map PDF name to JSON
+    const jsonName = filename.replace(/\.pdf$/i, ".json");
+    const jsonPath = join(sourcesDir, jsonName);
+
+    if (existsSync(jsonPath)) {
+      const data = await readFile(jsonPath, "utf-8");
+      return c.json(JSON.parse(data));
+    }
+    // Fuzzy find
+    try {
+      const files = await readdir(sourcesDir);
+      const needle = filename.replace(/\.pdf$/i, "").replace(/^\d+\.\s*/, "").toLowerCase();
+      const match = files.find((f) => f.endsWith(".json") && f.toLowerCase().includes(needle));
+      if (match) {
+        const data = await readFile(join(sourcesDir, match), "utf-8");
+        return c.json(JSON.parse(data));
+      }
+    } catch {}
+    return c.json({ error: "Bbox data not found" }, 404);
+  });
+
+  // ── API: Wiki ─────────────────────────────────────────────────────────
+
+  app.get("/api/wiki", async (c) => {
+    const wikiPath = join(kbDir, "wiki", "wiki.md");
+    if (!existsSync(wikiPath)) return c.json({ content: "" });
+    try {
+      const content = await readFile(wikiPath, "utf-8");
+      return c.json({ content });
+    } catch {
+      return c.json({ content: "" });
+    }
+  });
+
+  // ── WebSocket: Chat ───────────────────────────────────────────────────
+  // Placeholder — will be wired to agent session in W2/W3
+
+  app.get("/ws/chat", upgradeWebSocket((c) => ({
+    onOpen(evt, ws) {
+      ws.send(JSON.stringify({ type: "connected", message: "llm-kb web UI ready" }));
+    },
+    onMessage(evt, ws) {
+      const data = JSON.parse(typeof evt.data === "string" ? evt.data : "{}");
+      if (data.type === "message") {
+        // TODO W2/W3: route to agent session
+        ws.send(JSON.stringify({ type: "text_delta", text: `Echo: ${data.text}\n\n(Agent bridge not yet connected — coming in W2/W3)` }));
+        ws.send(JSON.stringify({ type: "done", elapsed: 0, filesRead: 0, citationCount: 0 }));
+      }
+    },
+    onClose() {},
+  })));
+
+  // ── Start ─────────────────────────────────────────────────────────────
+
+  const server = serve({ fetch: app.fetch, port }, (info) => {
+    console.log(`\n  🌐 llm-kb web UI running at http://localhost:${port}\n`);
+  });
+
+  injectWebSocket(server);
+
+  // Auto-open browser
+  if (open) {
+    const url = `http://localhost:${port}`;
+    const cmd = process.platform === "win32" ? `start "" "${url}"`
+      : process.platform === "darwin" ? `open "${url}"`
+      : `xdg-open "${url}"`;
+    exec(cmd, () => {});
+  }
+
+  // Keep process alive
+  await new Promise(() => {});
+}

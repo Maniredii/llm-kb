@@ -264,4 +264,40 @@ program
     console.log();
   });
 
+program
+  .command("ui")
+  .description("Open the web UI with chat, citations, and source viewer")
+  .argument("<folder>", "Path to your documents folder")
+  .option("--port <n>", "Port number", parseInt, 3947)
+  .option("--no-open", "Don't auto-open the browser")
+  .action(async (folder: string, options: { port: number; open: boolean }) => {
+    console.log(`\n${chalk.bold("llm-kb")} web UI\n`);
+
+    const auth = checkAuth();
+    if (!auth.ok) exitWithAuthError();
+
+    if (!existsSync(folder)) {
+      console.error(chalk.red(`Error: Folder not found: ${folder}`));
+      process.exit(1);
+    }
+
+    const root = resolve(folder);
+    const config = await loadConfig(root);
+
+    // Check KB exists
+    if (!existsSync(join(root, ".llm-kb", "wiki", "sources"))) {
+      console.error(chalk.red("No knowledge base found. Run 'llm-kb run <folder>' first."));
+      process.exit(1);
+    }
+
+    const { startWebUI } = await import("./web/server.js");
+    await startWebUI({
+      folder: root,
+      port: options.port,
+      open: options.open,
+      authStorage: auth.authStorage,
+      modelId: config.queryModel,
+    });
+  });
+
 program.parse();
