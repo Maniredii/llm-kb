@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { exec } from "node:child_process";
 import type { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { createWebChatSession } from "./bridge.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -209,22 +210,50 @@ export async function startWebUI(options: WebUIOptions): Promise<void> {
   });
 
   // ── WebSocket: Chat ───────────────────────────────────────────────────
-  // Placeholder — will be wired to agent session in W2/W3
 
-  app.get("/ws/chat", upgradeWebSocket((c) => ({
-    onOpen(evt, ws) {
-      ws.send(JSON.stringify({ type: "connected", message: "llm-kb web UI ready" }));
-    },
-    onMessage(evt, ws) {
-      const data = JSON.parse(typeof evt.data === "string" ? evt.data : "{}");
-      if (data.type === "message") {
-        // TODO W2/W3: route to agent session
-        ws.send(JSON.stringify({ type: "text_delta", text: `Echo: ${data.text}\n\n(Agent bridge not yet connected — coming in W2/W3)` }));
-        ws.send(JSON.stringify({ type: "done", elapsed: 0, filesRead: 0, citationCount: 0 }));
-      }
-    },
-    onClose() {},
-  })));
+  app.get("/ws/chat", upgradeWebSocket((c) => {
+    let chatSession: Awaited<ReturnType<typeof createWebChatSession>> | null = null;
+
+    return {
+      async onOpen(evt, ws) {
+        ws.send(JSON.stringify({ type: "connected", message: "llm-kb web UI ready" }));
+
+        // Create agent session
+        try {
+          chatSession = await createWebChatSession(folder, {
+            send(data: string) { ws.send(data); },
+          }, {
+            authStorage: options.authStorage,
+            modelId: options.modelId,
+          });
+          ws.send(JSON.stringify({ type: "ready" }));
+        } catch (err: any) {
+          ws.send(JSON.stringify({ type: "error", message: err.message }));
+        }
+      },
+      onMessage(evt, ws) {
+        const raw = typeof evt.data === "string" ? evt.data : "";
+        let data: any;
+        try { data = JSON.parse(raw); } catch { return; }
+
+        if (data.type === "message" && data.text) {
+          if (!chatSession) {
+            ws.send(JSON.stringify({ type: "error", message: "Session not ready" }));
+            return;
+          }
+          chatSession.prompt(data.text).catch((err: any) => {
+            ws.send(JSON.stringify({ type: "error", message: err.message }));
+          });
+        }
+      },
+      onClose() {
+        if (chatSession) {
+          chatSession.dispose();
+          chatSession = null;
+        }
+      },
+    };
+  }));
 
   // ── Start ─────────────────────────────────────────────────────────────
 
