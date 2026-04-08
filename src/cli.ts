@@ -209,6 +209,9 @@ program
     console.log(`  Queries analyzed:  ${metrics.totalQAs}`);
     console.log(`  Wiki hit rate:     ${metrics.totalQAs > 0 ? Math.round(metrics.wikiHits / metrics.totalQAs * 100) : 0}%`);
     console.log(`  Wasted reads:      ${metrics.wastedReads}`);
+    const cm = metrics.citations;
+    const bboxPct = cm.totalCitations > 0 ? Math.round(cm.withBbox / cm.totalCitations * 100) : 0;
+    console.log(`  Citations:         ${cm.totalCitations} total, ${chalk.green(`${cm.withBbox} with bbox`)}${cm.withoutBbox > 0 ? chalk.yellow(` ${cm.withoutBbox} without`) : ''} (${bboxPct}%)`);
     console.log(`  Issues:            ${errors > 0 ? chalk.red(`${errors} errors`) : chalk.green("0 errors")}  ${warnings > 0 ? chalk.yellow(`${warnings} warnings`) : chalk.dim("0 warnings")}`);
     console.log(`  Wiki gaps:         ${wikiGaps.length > 0 ? chalk.yellow(String(wikiGaps.length)) : chalk.green("0")}`);
     console.log();

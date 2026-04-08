@@ -5,6 +5,8 @@ import { readFile, readdir, writeFile, mkdir } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { join, basename } from "node:path";
+import type { TraceCitation } from "./trace-builder.js";
+import { parseCitations } from "./citations.js";
 
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -19,6 +21,7 @@ interface SessionQA {
   answer: string;
   model: string;
   durationMs: number;
+  citations: TraceCitation[];
 }
 
 interface EvalIssue {
@@ -30,6 +33,16 @@ interface EvalIssue {
   recommendation: string;
 }
 
+interface CitationMetrics {
+  totalCitations: number;
+  withBbox: number;
+  withoutBbox: number;
+  multiPage: number;
+  avgPerAnswer: number;
+  answersWithCitations: number;
+  answersWithoutCitations: number;
+}
+
 interface EvalMetrics {
   totalSessions: number;
   totalQAs: number;
@@ -39,6 +52,7 @@ interface EvalMetrics {
   totalFilesRead: number;
   uniqueFilesRead: Map<string, number>; // file → read count
   wastedReads: number;    // files read but not cited in answer
+  citations: CitationMetrics;
 }
 
 export interface EvalResult {
@@ -101,6 +115,7 @@ async function parseSessionsForEval(sessionsDir: string, sourcesDir: string, lim
         if (msg.role === "user") {
           // If we had a previous Q&A, save it
           if (currentQuestion && currentAnswer) {
+            const parsed = parseCitations(currentAnswer);
             qas.push({
               sessionFile: file,
               question: currentQuestion,
@@ -113,6 +128,7 @@ async function parseSessionsForEval(sessionsDir: string, sourcesDir: string, lim
               answer: currentAnswer,
               model: currentModel,
               durationMs: endTs - startTs,
+              citations: parsed.citations,
             });
           }
 
@@ -155,6 +171,7 @@ async function parseSessionsForEval(sessionsDir: string, sourcesDir: string, lim
 
       // Save the last Q&A
       if (currentQuestion && currentAnswer) {
+        const parsed = parseCitations(currentAnswer);
         qas.push({
           sessionFile: file,
           question: currentQuestion,
@@ -167,6 +184,7 @@ async function parseSessionsForEval(sessionsDir: string, sourcesDir: string, lim
           answer: currentAnswer,
           model: currentModel,
           durationMs: endTs - startTs,
+          citations: parsed.citations,
         });
       }
     } catch {
@@ -214,6 +232,33 @@ function calculateMetrics(qas: SessionQA[]): EvalMetrics {
     }
   }
 
+  // Citation metrics
+  let totalCitations = 0;
+  let withBbox = 0;
+  let withoutBbox = 0;
+  let multiPage = 0;
+  let answersWithCitations = 0;
+  let answersWithoutCitations = 0;
+
+  for (const qa of qas) {
+    if (qa.citations.length > 0) {
+      answersWithCitations++;
+      for (const c of qa.citations) {
+        totalCitations++;
+        if (c.bbox || (c.pages && c.pages.length > 0)) {
+          withBbox++;
+        } else {
+          withoutBbox++;
+        }
+        if (c.pages && c.pages.length > 0) {
+          multiPage++;
+        }
+      }
+    } else {
+      answersWithoutCitations++;
+    }
+  }
+
   return {
     totalSessions: uniqueSessions.size,
     totalQAs: qas.length,
@@ -223,6 +268,15 @@ function calculateMetrics(qas: SessionQA[]): EvalMetrics {
     totalFilesRead,
     uniqueFilesRead: uniqueFiles,
     wastedReads,
+    citations: {
+      totalCitations,
+      withBbox,
+      withoutBbox,
+      multiPage,
+      avgPerAnswer: qas.length > 0 ? totalCitations / qas.length : 0,
+      answersWithCitations,
+      answersWithoutCitations,
+    },
   };
 }
 
@@ -341,6 +395,20 @@ function buildReport(result: EvalResult): string {
   lines.push(`| Wasted reads | ${metrics.wastedReads} |`);
   lines.push(``);
 
+  // Citations
+  const cm = metrics.citations;
+  lines.push(`## Citations`);
+  lines.push(``);
+  lines.push(`| Metric | Value |`);
+  lines.push(`|---|---|`);
+  lines.push(`| Total citations | ${cm.totalCitations} |`);
+  lines.push(`| Avg per answer | ${cm.avgPerAnswer.toFixed(1)} |`);
+  lines.push(`| With bbox | ${cm.withBbox} (${cm.totalCitations > 0 ? Math.round(cm.withBbox / cm.totalCitations * 100) : 0}%) |`);
+  lines.push(`| Without bbox | ${cm.withoutBbox} |`);
+  lines.push(`| Multi-page | ${cm.multiPage} |`);
+  lines.push(`| Answers with citations | ${cm.answersWithCitations}/${metrics.totalQAs} (${metrics.totalQAs > 0 ? Math.round(cm.answersWithCitations / metrics.totalQAs * 100) : 0}%) |`);
+  lines.push(``);
+
   // Most read files
   if (metrics.uniqueFilesRead.size > 0) {
     lines.push(`### Most Read Files`);
@@ -446,6 +514,22 @@ function buildAgentsInsights(result: EvalResult): string {
     }
   }
 
+  // Citation quality
+  const cm = metrics.citations;
+  if (cm.totalCitations > 0) {
+    const bboxRate = Math.round(cm.withBbox / cm.totalCitations * 100);
+    lines.push(`### Citation Quality`);
+    lines.push(`- Bbox coverage: ${bboxRate}% (target: 100%)`);
+    lines.push(`- Avg citations per answer: ${cm.avgPerAnswer.toFixed(1)}`);
+    if (cm.withoutBbox > 0) {
+      lines.push(`- ${cm.withoutBbox} citations missing bbox — agent should always read .json files`);
+    }
+    if (cm.answersWithoutCitations > 0) {
+      lines.push(`- ${cm.answersWithoutCitations} answers had no citations — every answer must cite sources`);
+    }
+    lines.push(``);
+  }
+
   // Performance note
   const hitRate = metrics.totalQAs > 0 ? Math.round(metrics.wikiHits / metrics.totalQAs * 100) : 0;
   lines.push(`### Performance`);
@@ -473,7 +557,7 @@ export async function runEval(
 
   if (qas.length === 0) {
     return {
-      metrics: { totalSessions: 0, totalQAs: 0, avgDurationMs: 0, wikiHits: 0, sourceReads: 0, totalFilesRead: 0, uniqueFilesRead: new Map(), wastedReads: 0 },
+      metrics: { totalSessions: 0, totalQAs: 0, avgDurationMs: 0, wikiHits: 0, sourceReads: 0, totalFilesRead: 0, uniqueFilesRead: new Map(), wastedReads: 0, citations: { totalCitations: 0, withBbox: 0, withoutBbox: 0, multiPage: 0, avgPerAnswer: 0, answersWithCitations: 0, answersWithoutCitations: 0 } },
       issues: [],
       wikiGaps: [],
       timestamp: new Date().toISOString(),
