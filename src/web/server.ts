@@ -189,7 +189,6 @@ export async function startWebUI(options: WebUIOptions): Promise<void> {
 
       // Try exact per-page file first
       const pageFile = join(pagesDir, `${pageNum}.json`);
-      console.log(`[bbox] Looking for: ${pageFile}, exists: ${existsSync(pageFile)}`);
       if (existsSync(pageFile)) {
         const data = JSON.parse(await readFile(pageFile, "utf-8"));
         return c.json({ source: data.source, totalPages: data.totalPages, pages: [data] });
