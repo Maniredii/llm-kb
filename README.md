@@ -4,7 +4,7 @@ Drop files into a folder. Get a knowledge base you can query — with a self-imp
 
 Inspired by [Karpathy's LLM Knowledge Bases](https://x.com/karpathy/status/2039805659525644595) and [Farzapedia](https://x.com/FarzaTV).
 
-![llm-kb demo](./assets/llm-kb-demo-short.gif)
+![llm-kb demo](./assets/llm-kb-demo-hq.gif)
 
 **Demo:** browser UI with streamed answers, clickable citations, and source-highlighted PDFs.
 [Download the short MP4 demo](./assets/llm-kb-demo-short.mp4)
