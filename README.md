@@ -4,18 +4,42 @@ Drop files into a folder. Get a knowledge base you can query — with a self-imp
 
 Inspired by [Karpathy's LLM Knowledge Bases](https://x.com/karpathy/status/2039805659525644595) and [Farzapedia](https://x.com/FarzaTV).
 
+![llm-kb demo](./assets/llm-kb-demo-short.gif)
+
+**Demo:** browser UI with streamed answers, clickable citations, and source-highlighted PDFs.
+[Download the short MP4 demo](./assets/llm-kb-demo-short.mp4)
+
 ## Quick Start
 
 ```bash
 npm install -g llm-kb
 llm-kb run ./my-documents
+llm-kb ui ./my-documents
 ```
 
-That's it. PDFs get parsed, an index is built, and an interactive chat opens — ready for questions.
+- `llm-kb run` scans, parses, indexes, and opens the interactive terminal workflow.
+- `llm-kb ui` opens the browser experience with citation chips, session history, wiki view, and source inspection.
+
+Typical flow:
+1. Drop PDFs/docs into a folder
+2. Run `llm-kb run ./my-documents` once to build `.llm-kb/`
+3. Open `llm-kb ui ./my-documents`
+4. Ask a question
+5. Click a citation to jump to the source page and see the highlighted evidence
+
+## Why this is different
+
+Most document chat tools stop at “answer with a citation.” `llm-kb` goes further:
+
+- **Grounded answers** — responses are built from parsed local source files, not just vague retrieval snippets
+- **Concept wiki** — every query compounds into a reusable wiki that speeds up future questions
+- **Inspectable evidence** — click a citation and open the original PDF with the cited region highlighted
+- **Two interfaces** — use the terminal for fast research loops and the browser UI when you want richer navigation
+- **Self-improving behavior** — session traces + eval tighten file selection, citations, and wiki coverage over time
 
 ## Authentication
 
-Three options (you need one):
+Use any one of these:
 
 **Option 1 — OpenRouter API key (recommended)**
 ```bash
@@ -33,6 +57,11 @@ pi   # run once to authenticate
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
+**Option 4 — OpenAI API key**
+```bash
+export OPENAI_API_KEY=sk-...
+```
+
 If none is configured, `llm-kb` shows a clear error with setup instructions.
 
 ## What It Does
@@ -44,7 +73,7 @@ llm-kb run ./my-documents
 ```
 
 ```
-llm-kb v0.5.0
+llm-kb v0.6.0
 
 Scanning ./my-documents...
   Found 9 files (9 PDF)
@@ -83,6 +112,23 @@ Revenue grew 12% QoQ driven by...
 4. **Watches** — drop new files while running, they get parsed and indexed automatically
 5. **Chat** — interactive TUI with Pi-style markdown rendering, thinking display, tool call progress
 6. **Learns** — every answer updates a concept-organized wiki; repeated questions answered instantly from cache
+
+### Web UI — ask, click citations, inspect evidence
+
+```bash
+llm-kb ui ./my-documents
+```
+
+The browser UI is the clearest way to see what makes `llm-kb` different:
+
+- **Streamed chat** with model/status display
+- **Session history** in the sidebar
+- **Wiki tab** for accumulated knowledge
+- **Citation chips** under each answer
+- **Click citation → open source viewer**
+- **Split view PDF inspection** with bounding-box highlights on the cited page
+
+If a response cites `[1] Annual Report.pdf, p.12`, you can click that citation and immediately inspect the matching source page instead of trusting the model blindly.
 
 ### Continuous conversation
 
@@ -365,7 +411,9 @@ You can create `guidelines.md` manually before ever running eval. The agent will
 
 Your original files are never modified. Delete `.llm-kb/` to start fresh.
 
-## Display
+## Interfaces
+
+### Terminal UI
 
 The interactive TUI (via `@mariozechner/pi-tui`) shows the Claude Web UI pattern:
 
@@ -381,6 +429,17 @@ Phases can interleave: think → read files → answer → think again → read 
 
 The `llm-kb query` command uses stdout mode — same phases, works with pipes and scripts.
 
+### Browser UI
+
+`llm-kb ui ./my-documents` opens a browser-based research interface with:
+
+- chat + streaming answers
+- session history
+- wiki browsing
+- citation chips
+- source viewer for original PDFs
+- click-to-highlight evidence on cited pages
+
 ## Development
 
 ```bash
@@ -390,7 +449,7 @@ npm install
 npm run build
 npm link
 
-npm test              # 42 tests
+npm test              # 58 tests
 npm run test:watch    # vitest watch mode
 
 llm-kb run ./test-folder

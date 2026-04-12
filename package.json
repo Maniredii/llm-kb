@@ -7,6 +7,7 @@
   },
   "files": [
     "bin/**",
+    "assets/**",
     "README.md"
   ],
   "type": "module",
