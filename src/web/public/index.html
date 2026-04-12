@@ -63,13 +63,20 @@
     .msg-user .bubble { max-width: 75%; background: var(--purple); color: white; padding: 10px 16px; border-radius: 16px 16px 4px 16px; font-size: 14px; line-height: 1.5; }
     .msg-assistant { margin-bottom: 16px; max-width: 85%; }
     .msg-model { font-size: 12px; color: var(--mid); margin-bottom: 6px; }
-    .msg-thinking { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .msg-thinking { margin-bottom: 8px; font-size: 13px; color: var(--ink-faint); border-left: 2px solid var(--border); padding-left: 10px; cursor: default; }
+    .msg-thinking .thinking-header { display: flex; align-items: center; gap: 8px; }
+    .msg-thinking .thinking-content { margin-top: 4px; white-space: pre-wrap; max-height: 200px; overflow-y: auto; font-size: 12px; opacity: 0.7; }
+    .msg-thinking.collapsed .thinking-content { max-height: 1.4em; overflow: hidden; cursor: pointer; }
+    .msg-thinking.collapsed .msg-thinking-text::after { content: ' (click to expand)'; font-size: 11px; opacity: 0.5; }
+    .msg-thinking.empty .thinking-content { display: none; }
+    .msg-thinking.empty .msg-thinking-text::after { content: ''; }
     .thinking-dots { display: flex; gap: 3px; }
     .thinking-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--purple); animation: bounce 1.4s ease-in-out infinite; }
     .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
     .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
     @keyframes bounce { 0%,80%,100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
     .msg-tool { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 4px; border: 1px solid var(--paper-dim); background: white; border-radius: 8px; font-size: 13px; color: var(--ink-soft); }
+    .tool-elapsed { margin-left: auto; font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
     .tool-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .tool-dot.running { background: var(--teal); animation: pulse 1.5s ease-in-out infinite; }
     .tool-dot.done { background: var(--good); }
@@ -95,6 +102,8 @@
     .citation-quote { color: var(--ink-faint); font-size: 12px; margin-top: 2px; }
     .citation-status { font-size: 11px; margin-top: 2px; }
     .citation-chip.active { background: white; box-shadow: inset 0 0 0 1px var(--paper-dim); }
+    .citation-link { color: var(--purple); text-decoration: none; font-weight: 600; cursor: pointer; border-bottom: 1px dotted var(--purple); }
+    .citation-link:hover { background: rgba(79, 45, 127, 0.08); border-radius: 2px; }
 
     /* ── Source Viewer ─── */
     #source-viewer { width: 0; min-width: 0; opacity: 0; pointer-events: none; overflow: hidden; display: flex; flex-direction: column; background: white; border-left: 1px solid var(--paper-dim); transition: width 0.2s ease, opacity 0.2s ease; }
@@ -118,8 +127,8 @@
     #source-viewer-page-wrap { position: relative; display: inline-block; }
     #source-viewer-canvas { display: block; background: white; border-radius: 10px; box-shadow: 0 8px 24px rgba(26, 21, 32, 0.08); }
     #source-viewer-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-    .source-highlight { fill: rgba(79, 45, 127, 0.16); stroke: rgba(79, 45, 127, 0.6); stroke-width: 2; rx: 4; animation: sourcePulse 1.8s ease-in-out infinite; }
-    @keyframes sourcePulse { 0%,100% { fill-opacity: 0.16; stroke-opacity: 0.55; } 50% { fill-opacity: 0.28; stroke-opacity: 0.9; } }
+    .source-highlight { fill: rgba(255, 200, 0, 0.5); stroke: rgba(220, 160, 0, 1); stroke-width: 2; rx: 2; animation: sourcePulse 1.8s ease-in-out infinite; }
+    @keyframes sourcePulse { 0%,100% { fill-opacity: 0.5; } 50% { fill-opacity: 0.7; } }
     #source-viewer-empty[hidden],
     #source-viewer-loading[hidden],
     #source-viewer-error[hidden],
@@ -287,16 +296,18 @@ function handleEvent(data) {
       break;
     case 'thinking_start':
       ensureAssistant();
+      if (answerEl) answerEl = null; // new phase — allow new answer bubble
       showThinking(true);
       break;
     case 'thinking_delta':
-      // could show thinking text — skip for now
+      appendThinkingText(data.text);
       break;
     case 'thinking_end':
-      showThinking(false);
+      collapseThinking();
       break;
     case 'tool_start':
       ensureAssistant();
+      if (answerEl) answerEl = null; // new phase — allow new answer bubble after tools
       addToolCard(data.id, data.label, data.name);
       break;
     case 'tool_end':
@@ -317,6 +328,7 @@ function handleEvent(data) {
       break;
     case 'citations':
       renderCitations(data.data);
+      preloadCitationPdfs(data.data);
       break;
     case 'done':
       finishResponse(data);
@@ -346,6 +358,8 @@ function sendMessage(text) {
   currentAssistant = null;
   answerEl = null;
   answerText = '';
+  answerSegments = [];
+  activeThinkingEl = null;
 
   ws.send(JSON.stringify({ type: 'message', text }));
 }
@@ -377,51 +391,96 @@ function ensureAssistant() {
   messagesEl.appendChild(currentAssistant);
 }
 
+let activeThinkingEl = null;
+
 function showThinking(show) {
   if (!currentAssistant) return;
-  let el = currentAssistant.querySelector('.msg-thinking');
-  if (show && !el) {
-    el = document.createElement('div');
+  if (show) {
+    const el = document.createElement('div');
     el.className = 'msg-thinking';
-    el.innerHTML = `<div class="thinking-dots"><span></span><span></span><span></span></div><span class="msg-thinking-text">Thinking...</span>`;
+    el.innerHTML = `<div class="thinking-header"><div class="thinking-dots"><span></span><span></span><span></span></div><span class="msg-thinking-text">Thinking</span></div><div class="thinking-content"></div>`;
     currentAssistant.appendChild(el);
+    activeThinkingEl = el;
     scrollToBottom();
-  } else if (!show && el) {
-    el.remove();
   }
 }
+
+function appendThinkingText(text) {
+  if (!activeThinkingEl) return;
+  const content = activeThinkingEl.querySelector('.thinking-content');
+  if (content) {
+    content.textContent += text;
+    scrollToBottom();
+  }
+}
+
+function collapseThinking() {
+  if (!activeThinkingEl) return;
+  const dots = activeThinkingEl.querySelector('.thinking-dots');
+  if (dots) dots.remove();
+  const content = activeThinkingEl.querySelector('.thinking-content');
+  if (content && content.textContent.trim().length > 0) {
+    // Collapse to show first line with toggle
+    activeThinkingEl.classList.add('collapsed');
+    activeThinkingEl.onclick = () => activeThinkingEl.classList.toggle('collapsed');
+  } else {
+    // No thinking text — just show "Thought" label
+    activeThinkingEl.classList.add('collapsed');
+    activeThinkingEl.classList.add('empty');
+  }
+  activeThinkingEl = null;
+}
+
+const toolTimers = {};
 
 function addToolCard(id, label, name) {
   if (!currentAssistant) return;
   const el = document.createElement('div');
   el.className = 'msg-tool';
   el.dataset.toolId = id;
-  el.innerHTML = `<span class="tool-dot running"></span><span>${escapeHtml(label)}</span>`;
+  el.innerHTML = `<span class="tool-dot running"></span><span>${escapeHtml(label)}</span><span class="tool-elapsed"></span>`;
   currentAssistant.appendChild(el);
   scrollToBottom();
+  // Start elapsed timer
+  const start = Date.now();
+  const timerEl = el.querySelector('.tool-elapsed');
+  toolTimers[id] = setInterval(() => {
+    const secs = ((Date.now() - start) / 1000).toFixed(0);
+    timerEl.textContent = `${secs}s`;
+  }, 1000);
 }
 
 function updateToolCard(id, isError) {
   if (!currentAssistant) return;
-  const el = currentAssistant.querySelector(`.msg-tool[data-tool-id="${id}"] .tool-dot`);
-  if (el) {
-    el.classList.remove('running');
-    el.classList.add(isError ? 'error' : 'done');
-  }
+  // Stop timer
+  if (toolTimers[id]) { clearInterval(toolTimers[id]); delete toolTimers[id]; }
+  const el = currentAssistant.querySelector(`.msg-tool[data-tool-id="${id}"]`);
+  if (!el) return;
+  const dot = el.querySelector('.tool-dot');
+  if (dot) { dot.classList.remove('running'); dot.classList.add(isError ? 'error' : 'done'); }
+  const timer = el.querySelector('.tool-elapsed');
+  if (timer) timer.textContent = '';
 }
+
+/** All answer segments — each gets its own div for interleaving with tools/thinking */
+let answerSegments = [];
 
 function ensureAnswerBubble() {
   if (answerEl) return;
   if (!currentAssistant) ensureAssistant();
   answerEl = document.createElement('div');
   answerEl.className = 'msg-answer';
+  answerEl._segmentStart = answerText.length;
   currentAssistant.appendChild(answerEl);
+  answerSegments.push(answerEl);
 }
 
 function renderAnswer() {
   if (!answerEl) return;
+  // Get text for this segment only
+  const segStart = answerEl._segmentStart || 0;
+  let display = answerText.slice(segStart);
   // Strip CITATIONS block from display
-  let display = answerText;
   const citIdx = display.search(/^CITATIONS:\s*$/im);
   if (citIdx >= 0) display = display.slice(0, citIdx).trimEnd();
   try {
@@ -431,8 +490,55 @@ function renderAnswer() {
   }
 }
 
+/** Final render — re-render all segments to strip CITATIONS from whichever has it */
+function renderAllAnswers() {
+  for (const seg of answerSegments) {
+    const segStart = seg._segmentStart || 0;
+    // Find end: next segment's start, or end of answerText
+    const segIdx = answerSegments.indexOf(seg);
+    const segEnd = segIdx < answerSegments.length - 1 ? answerSegments[segIdx + 1]._segmentStart : answerText.length;
+    let display = answerText.slice(segStart, segEnd);
+    const citIdx = display.search(/^CITATIONS:\s*$/im);
+    if (citIdx >= 0) display = display.slice(0, citIdx).trimEnd();
+    if (!display.trim()) { seg.style.display = 'none'; continue; }
+    try {
+      seg.innerHTML = marked.parse(display);
+    } catch {
+      seg.textContent = display;
+    }
+  }
+}
+
+/** Store citations for inline linking */
+let lastCitations = [];
+
+function linkInlineCitations(citations) {
+  if (!currentAssistant) return;
+  // Find all [N] references in answer segments and make them clickable
+  const answerEls = currentAssistant.querySelectorAll('.msg-answer');
+  for (const el of answerEls) {
+    el.innerHTML = el.innerHTML.replace(/\[(\d+)\]/g, (match, num) => {
+      const idx = parseInt(num, 10) - 1;
+      if (idx >= 0 && idx < citations.length) {
+        return `<a class="citation-link" href="#" data-citation-idx="${idx}" title="${escapeHtml(citations[idx].file)}, p.${citations[idx].page}">[${num}]</a>`;
+      }
+      return match;
+    });
+  }
+  // Add click handlers
+  currentAssistant.querySelectorAll('.citation-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const idx = parseInt(link.dataset.citationIdx, 10);
+      const chip = currentAssistant.querySelectorAll('.citation-chip')[idx];
+      openSourceViewer(citations[idx], chip);
+    });
+  });
+}
+
 function renderCitations(citations) {
   if (!currentAssistant || !citations.length) return;
+  lastCitations = citations;
   const block = document.createElement('div');
   block.className = 'citations-block';
   for (let i = 0; i < citations.length; i++) {
@@ -506,6 +612,18 @@ function updateSourceViewerNav() {
   sourceViewerPrevBtn.disabled = !viewerPdf || viewerPage <= 1;
   sourceViewerNextBtn.disabled = !viewerPdf || viewerPage >= total;
   sourceViewerPageIndicator.textContent = total > 0 ? `Page ${viewerPage} of ${total}` : 'Page —';
+}
+
+/** Preload PDFs in background when citations arrive so clicks are instant */
+const preloadedPdfs = {};
+function preloadCitationPdfs(citations) {
+  if (!window.pdfjsLib) return;
+  const files = [...new Set(citations.map(c => c.file))];
+  for (const file of files) {
+    if (preloadedPdfs[file]) continue;
+    const url = `/api/pdf/${encodeURIComponent(file)}`;
+    preloadedPdfs[file] = window.pdfjsLib.getDocument({ url }).promise.catch(() => null);
+  }
 }
 
 /** Cache bbox page data: bboxPageCache["file.pdf:3"] = pageData */
@@ -650,8 +768,14 @@ async function openSourceViewer(citation, chip) {
     const verifyPromise = verifyCitationBbox(citation);
 
     if (!viewerPdf || viewerFile !== citation.file) {
-      const url = `/api/pdf/${encodeURIComponent(citation.file)}`;
-      viewerPdf = await window.pdfjsLib.getDocument({ url }).promise;
+      // Use preloaded PDF if available, otherwise fetch now
+      if (preloadedPdfs[citation.file]) {
+        viewerPdf = await preloadedPdfs[citation.file];
+      }
+      if (!viewerPdf) {
+        const url = `/api/pdf/${encodeURIComponent(citation.file)}`;
+        viewerPdf = await window.pdfjsLib.getDocument({ url }).promise;
+      }
       viewerFile = citation.file;
     }
 
@@ -719,7 +843,8 @@ function closeSourceViewer() {
 
 function finishResponse(data) {
   if (!currentAssistant) return;
-  renderAnswer(); // final render
+  renderAllAnswers(); // final render of all segments
+  if (lastCitations.length > 0) linkInlineCitations(lastCitations);
   const done = document.createElement('div');
   done.className = 'msg-done';
   const parts = [`${data.elapsed}s`];

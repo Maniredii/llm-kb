@@ -18,7 +18,17 @@ function getToolLabel(toolName: string, args: any): string | null {
     return `${verb}  ${file}`;
   }
   if (toolName === "bash" && args?.command) {
-    return `Running  bash`;
+    const cmd = (args.command as string).toLowerCase();
+    if (cmd.includes("textitems") || cmd.includes("bbox") || cmd.includes(".json")) {
+      return "Looking up citations";
+    }
+    if (cmd.includes("readfilesync") || cmd.includes("readfile") || cmd.includes("cat ")) {
+      return "Searching files";
+    }
+    if (cmd.includes("grep") || cmd.includes("find") || cmd.includes("search")) {
+      return "Searching files";
+    }
+    return "Analyzing sources";
   }
   return null;
 }
